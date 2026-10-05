@@ -61,6 +61,8 @@ WHALE_THRESHOLD = 0.15  # desbalance (compra - venta) / total para decir "compra
 SERIES_PERIOD = [
     ("_metrics_5m", 300),
     ("_whale_trades_1m", 60),
+    ("_activity_1m", 60),
+    ("_book_1m", 60),
     ("_snapshot", 3600),  # una fila por corrida del cron
     ("_funding", 8 * 3600),
     ("_1h", 3600),

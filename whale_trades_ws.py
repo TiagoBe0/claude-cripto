@@ -22,6 +22,13 @@ separado (minuto, mercado, lado, USD): de ahí salen los avisos de órdenes muy
 grandes (alertas/ballenas.py) y, con el tiempo, el estudio de qué hace el precio
 después de cada una.
 
+Y <data_dir>/BTCUSDT_activity_1m.csv, una fila por minuto y por mercado:
+    <m>_trades              mensajes de trades recibidos (Binance: aggTrades; Coinbase: matches)
+    <m>_orders              órdenes taker después de reagruparlas
+    <m>_median_order_usd    tamaño mediano de esas órdenes
+Muchas órdenes chicas = actividad de bots de alta frecuencia; sirve para ver cuándo se apagan
+(ronda 5 de investigacion/HIPOTESIS.md).
+
 No hay historia: solo existe lo capturado mientras el proceso corre.
 """
 
@@ -29,6 +36,7 @@ import asyncio
 import json
 import logging
 import sys
+import statistics
 import time
 from collections import defaultdict
 from datetime import datetime
@@ -50,6 +58,8 @@ URLS = {
     "coinbase": "wss://ws-feed.exchange.coinbase.com",
 }
 ORDER_COLUMNS = ["timestamp", "datetime_utc", "market", "side", "usd"]
+ACTIVITY_FIELDS = ["trades", "orders", "median_order_usd"]
+ACTIVITY_COLUMNS = ["timestamp", "datetime_utc"] + [f"{m}_{f}" for m in MARKETS for f in ACTIVITY_FIELDS]
 MINUTE = 60_000
 
 log = logging.getLogger("whale_trades_ws")
@@ -60,26 +70,31 @@ class Buckets:
 
     def __init__(self):
         self.data = defaultdict(lambda: defaultdict(dict))
+        self.trades = defaultdict(lambda: defaultdict(int))  # {minuto: {mercado: mensajes de trade}}
         self.written = -1  # último minuto escrito: lo que llegue más tarde se descarta
 
     def add(self, market: str, ts_ms: int, key, is_buy: bool, usd: float) -> None:
         minute = ts_ms - ts_ms % MINUTE
         if minute <= self.written:
             return
+        self.trades[minute][market] += 1
         orders = self.data[minute][market]
         order = orders.setdefault(key, [is_buy, 0.0])
         order[1] += usd
 
-    def flush(self, app: Appender, orders_app: Appender, now_ms: int) -> None:
+    def flush(self, app: Appender, orders_app: Appender, activity_app: Appender, now_ms: int) -> None:
         """Escribe los minutos ya cerrados (con 5 s de margen para trades que llegan tarde)."""
         for minute in sorted(m for m in self.data if m + MINUTE + 5000 <= now_ms):
             by_market = self.data.pop(minute)
-            row = [minute]
+            counts = self.trades.pop(minute, {})
+            row, activity = [minute], [minute]
             for m in MARKETS:
                 orders = by_market.get(m)
                 if not orders:
                     row += [""] * len(FIELDS)
+                    activity += [""] * len(ACTIVITY_FIELDS)
                     continue
+                activity += [counts.get(m, 0), len(orders), round(statistics.median(u for _, u in orders.values()), 2)]
                 wb = [u for b, u in orders.values() if b and u >= MIN_USD]
                 ws = [u for b, u in orders.values() if not b and u >= MIN_USD]
                 big = [[minute, m, "buy" if b else "sell", round(u, 2)] for b, u in orders.values() if u >= MIN_USD]
@@ -89,6 +104,7 @@ class Buckets:
                         round(sum(u for b, u in orders.values() if b), 2),
                         round(sum(u for b, u in orders.values() if not b), 2)]
             app.write([row])
+            activity_app.write([activity])
             self.written = minute
 
 
@@ -131,18 +147,19 @@ async def forever(market, fn, session, buckets) -> None:
         await asyncio.sleep(delay)
 
 
-async def flusher(buckets: Buckets, app: Appender, orders_app: Appender) -> None:
+async def flusher(buckets: Buckets, app: Appender, orders_app: Appender, activity_app: Appender) -> None:
     while True:
         await asyncio.sleep(5)
-        buckets.flush(app, orders_app, int(time.time() * 1000))
+        buckets.flush(app, orders_app, activity_app, int(time.time() * 1000))
 
 
 async def main(data_dir: Path) -> None:
     buckets = Buckets()
     with Appender(data_dir / f"{SYMBOL}_whale_trades_1m.csv", COLUMNS) as app, \
-            Appender(data_dir / f"{SYMBOL}_whale_orders.csv", ORDER_COLUMNS) as orders_app:
+            Appender(data_dir / f"{SYMBOL}_whale_orders.csv", ORDER_COLUMNS) as orders_app, \
+            Appender(data_dir / f"{SYMBOL}_activity_1m.csv", ACTIVITY_COLUMNS) as activity_app:
         async with aiohttp.ClientSession() as session:
-            await asyncio.gather(flusher(buckets, app, orders_app),
+            await asyncio.gather(flusher(buckets, app, orders_app, activity_app),
                                  forever("binance_spot", binance, session, buckets),
                                  forever("binance_perp", binance, session, buckets),
                                  forever("coinbase", coinbase, session, buckets))

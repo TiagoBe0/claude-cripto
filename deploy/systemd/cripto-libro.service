@@ -1,0 +1,12 @@
+[Unit]
+Description=Foto por minuto del libro de órdenes BTC (Binance spot y perp) para claude-cripto
+After=network-online.target
+
+[Service]
+WorkingDirectory=/home/simaf/sbergamin/root/claude-cripto
+ExecStart=/home/simaf/sbergamin/root/claude-cripto/.venv/bin/python libro_1m.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

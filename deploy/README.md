@@ -2,14 +2,14 @@
 
 Todo corre como usuario, sin root.
 
-- `systemd/`: servicios de usuario. Los dos recolectores (ballenas y
-  liquidaciones) y el servidor estático del panel en `127.0.0.1:8000`, que
+- `systemd/`: servicios de usuario. Los tres recolectores (ballenas,
+  liquidaciones y libro por minuto) y el servidor estático del panel en `127.0.0.1:8000`, que
   Cloudflare Tunnel publica en `malbecmotion.com/sbs/btc/`.
 
   ```bash
   cp deploy/systemd/*.service ~/.config/systemd/user/
   systemctl --user daemon-reload
-  systemctl --user enable --now cripto-ballenas cripto-liquidaciones cripto-dashboard
+  systemctl --user enable --now cripto-ballenas cripto-liquidaciones cripto-libro cripto-dashboard
   loginctl enable-linger "$USER"   # que sigan corriendo sin sesión abierta
   ```
 

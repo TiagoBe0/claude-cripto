@@ -282,6 +282,22 @@ systemctl --user status cripto-ballenas
 journalctl --user -u cripto-ballenas -f
 ```
 
+## Libro y actividad por minuto (`libro_1m.py`, `whale_trades_ws.py`)
+
+Para ver cuándo se retiran los market makers (bots de alta frecuencia), que no se ven directamente:
+
+- `data/BTCUSDT_book_1m.csv` (servicio `cripto-libro`): cada minuto, profundidad en US$ del libro de Binance spot
+  (±0,05 / 0,1 / 0,5 %) y perp (±0,05 / 0,1 %), spread en bps y `cover_pct` (hasta dónde llegó el libro devuelto).
+- `data/BTCUSDT_activity_1m.csv` (lo escribe `whale_trades_ws.py`): por mercado y minuto, trades recibidos,
+  órdenes taker reagrupadas y tamaño mediano de orden.
+- Hipótesis P5 (libro fino → volatilidad) y P6 (vuelven los bots → dirección) en `investigacion/HIPOTESIS.md`,
+  evaluadas cada mes con la ronda P. La versión histórica con velas (ronda 5, Amihud) no pasó: con velas se mide
+  sobre todo el volumen, no el libro.
+
+```bash
+systemctl --user status cripto-libro
+```
+
 ## Dataset para ML (`ml/build_dataset.py`)
 
 Con `"ml"` en la config, cada corrida del cron reescribe `data/ml/dataset_1h.csv`: una fila por vela de 1 h

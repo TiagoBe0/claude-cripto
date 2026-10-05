@@ -1,4 +1,5 @@
 """Ronda P: hipótesis sobre datos propios (ballenas, liquidaciones, libro), reglas en HIPOTESIS.md.
+P5 y P6 (profundidad del libro por minuto, libro_1m.py) son la parte en vivo de la ronda 5.
 
 Uso:
     python -m investigacion.propios       # imprime la tabla y escribe data/research/propios.json
@@ -64,6 +65,10 @@ def hourly_frame() -> pd.DataFrame:
         signed = big.usd.where(big.side == "buy", -big.usd)
         d["giant_net"] = signed.resample("1h").sum()
         d["orders_covered"] = d.index >= orders.index[0].floor("h")
+    book = _read(f"{SYMBOL}_book_1m.csv")
+    if book is not None:
+        # promedio de los minutos de la hora; minutos sin dato (fila vacía) no cuentan
+        d["depth01"] = (book.perp_bid_01 + book.perp_ask_01).resample("1h").mean()
     for hz in HORIZONS:
         d[f"ret_{hz}"] = d.close.shift(-hz) / d.close - 1
     return d
@@ -85,6 +90,13 @@ def signals(d: pd.DataFrame) -> dict:
     if "giant_net" in d:
         g = d.giant_net.where(d.orders_covered)
         s[("P4 orden gigante", +1)], s[("P4 orden gigante", -1)] = g > 0, g < 0
+    if "depth01" in d:
+        p = _pct(d.depth01, 7 * 24, 2 * 24)
+        # P5 mide volatilidad: +1 = se espera más (libro fino), -1 = menos (libro grueso)
+        s[("P5 libro fino → volatilidad", +1)], s[("P5 libro fino → volatilidad", -1)] = p <= 10, p >= 90
+        back = (p.shift(1).rolling(6).min() <= 10) & (p >= 50)
+        ch6 = d.close / d.close.shift(6) - 1
+        s[("P6 vuelven los bots", +1)], s[("P6 vuelven los bots", -1)] = back & (ch6 < 0), back & (ch6 > 0)
     return {k: v.fillna(False).astype(bool) for k, v in s.items()}
 
 
@@ -97,8 +109,9 @@ def _spaced(idx: pd.DatetimeIndex, hz: int) -> pd.DatetimeIndex:
     return pd.DatetimeIndex(keep)
 
 
-def evaluate(d: pd.DataFrame, sig: pd.Series, side: int, hz: int, covered: pd.Series) -> dict:
-    net = side * d[f"ret_{hz}"] - COST
+def evaluate(d: pd.DataFrame, sig: pd.Series, side: int, hz: int, covered: pd.Series, vol: bool = False) -> dict:
+    # vol: la variable es |retorno| (sin costos); side +1 espera más movimiento que la base, -1 menos
+    net = side * d[f"ret_{hz}"].abs() if vol else side * d[f"ret_{hz}"] - COST
     base = net[covered].dropna()
     ev = net[sig & covered].dropna()
     ind = net[_spaced(ev.index, hz)] if len(ev) else ev
@@ -121,18 +134,21 @@ def run() -> dict:
     rows = []
     for (name, side), sig in signals(d).items():
         # Horas cubiertas por la fuente de esa hipótesis (desde su primer dato)
-        col = {"P1": "whale_net", "P2": "liq_long", "P3": "book_imb", "P4": "giant_net"}[name[:2]]
+        col = {"P1": "whale_net", "P2": "liq_long", "P3": "book_imb", "P4": "giant_net",
+               "P5": "depth01", "P6": "depth01"}[name[:2]]
+        vol = name.startswith("P5")
+        lado = ("percentil ≤ 10 (+)" if side > 0 else "percentil ≥ 90 (−)") if vol else "largo" if side > 0 else "corto"
         first = d[col].first_valid_index()
         covered = pd.Series(d.index >= first, index=d.index) if first is not None else pd.Series(False, index=d.index)
         for hz in HORIZONS:
-            rows.append({"hipotesis": name, "lado": "largo" if side > 0 else "corto", "H_horas": hz,
-                         "datos_desde": None if first is None else str(first), **evaluate(d, sig, side, hz, covered)})
+            rows.append({"hipotesis": name, "lado": lado, "H_horas": hz,
+                         "datos_desde": None if first is None else str(first), **evaluate(d, sig, side, hz, covered, vol)})
     out = {"generated": int(time.time()), "rows": rows}
     OUT.parent.mkdir(parents=True, exist_ok=True)
     prev = json.loads(OUT.read_text()) if OUT.exists() else {"rows": []}
     OUT.write_text(json.dumps(out, indent=2, ensure_ascii=False))
     for r in rows:
-        print(f"{r['hipotesis']:18s} {r['lado']:5s} H={r['H_horas']:2d} h  eventos {r['n']:4d} ({r['n_ind']:3d} indep.)  {r['estado']}"
+        print(f"{r['hipotesis']:28s} {r['lado']:18s} H={r['H_horas']:2d} h  eventos {r['n']:4d} ({r['n_ind']:3d} indep.)  {r['estado']}"
               + (f"  exceso {r['exceso_%']:+.2f} % t {r['t']:.1f} mitades {r['mitades_%']}" if "t" in r else ""))
     # Aviso solo cuando una prueba pasa por primera vez
     was = {(r["hipotesis"], r["lado"], r["H_horas"]) for r in prev["rows"] if r["estado"].startswith("PASA")}
