@@ -280,7 +280,7 @@ O sea, la media proyectada sube si el precio de hoy está por encima de los cier
 **Advertencia que hay que tener presente al leer el resultado:** eso es un **momentum** disfrazado. Para la SMA 200
 a 20 días compara P con los cierres de hace 181 a 200 días, y para la SMA 50 a 10 días, con los de hace 41 a 50
 días. Si algo pasa, la pregunta siguiente es si agrega algo sobre el retorno simple a 6 meses o 6 semanas. Lo que
-se pone a prueba es la idea de la usuaria del panel: que proyectar las medias ayuda a anticipar el precio.
+se pone a prueba es la idea que dio origen al indicador: que proyectar las medias ayuda a anticipar el precio.
 
 Qué se vio antes de registrar (para juzgar el sesgo):
 
