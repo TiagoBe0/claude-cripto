@@ -12,6 +12,7 @@ mismas funciones de futures_data.py, desde el lanzamiento del perpetuo BTCUSDT (
 - BTCUSDT_metrics_5m.csv            open interest y ratios long/short (data.binance.vision; arranca
                                     cuando Binance empezó a publicarlos, ~2021-12)
 - fear_greed.csv                    Fear & Greed diario desde 2018 (alternative.me)
+- stablecoins_1d.csv                oferta diaria en unidades de stablecoins, USDT y USDC (DefiLlama, ronda 4)
 
 Incremental como el resto: volver a correrlo solo agrega lo nuevo.
 """
@@ -22,6 +23,7 @@ from pathlib import Path
 import ccxt
 import requests
 
+import external_data
 import futures_data
 from storage import Appender, last_timestamp
 
@@ -59,6 +61,7 @@ def main() -> None:
         ("funding", lambda: futures_data.update_funding(ex, SYMBOL, OUT / f"{SYMBOL}_funding.csv", start)),
         ("metrics 5m", lambda: futures_data.update_metrics(ex, SYMBOL, OUT / f"{SYMBOL}_metrics_5m.csv", mstart)),
         ("fear & greed", lambda: fear_greed(OUT / "fear_greed.csv")),
+        ("stablecoins", lambda: external_data.update_stablecoins(OUT / "stablecoins_1d.csv", 0)),
     ]
     for name, run in jobs:
         try:

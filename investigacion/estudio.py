@@ -40,7 +40,7 @@ def rsi(close: pd.Series, n: int = 14) -> pd.Series:
     return 100 - 100 / (1 + up / down)
 
 
-def daily_frame(until: pd.Timestamp | None = HOLDOUT) -> pd.DataFrame:
+def daily_frame(until: pd.Timestamp | None = HOLDOUT, horizons: tuple[int, ...] = HORIZONS) -> pd.DataFrame:
     """Una fila por día D con lo conocido al cierre de D (00:00 UTC de D+1).
 
     `until=None` incluye el holdout: solo para la corrida final de una estrategia ya cerrada.
@@ -73,7 +73,7 @@ def daily_frame(until: pd.Timestamp | None = HOLDOUT) -> pd.DataFrame:
     fd = f.copy()
     fd.index = fd.index - pd.Timedelta(microseconds=1)
     fday = fd.resample("1D").sum().reindex(d.index, fill_value=0.0)
-    for hz in HORIZONS:
+    for hz in horizons:
         d[f"ret_{hz}"] = d.close.shift(-hz) / d.close - 1
         d[f"fund_{hz}"] = fday[::-1].rolling(hz).sum()[::-1].shift(-1)
         # el trade cierra en D + H: si eso cae en el holdout o más allá de los datos, no cuenta
