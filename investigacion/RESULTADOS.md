@@ -121,3 +121,36 @@ nada. Con este proxy, la liquidez tampoco da dirección.
 
 Si se quisiera estudiar el patrón de L1 ("poco volumen hoy → poca volatilidad después"), sería una hipótesis nueva,
 registrada aparte y con el día de la semana como control.
+
+## Ronda 6 (2026-10-05) · medias móviles proyectadas · NO PASA
+
+`python -m investigacion.ronda6` · reglas registradas antes de correrla (6f2ef52) · código verificado contra un
+cálculo a fuerza bruta (0099e2c) · tabla en `data/research/ronda6.csv`.
+
+**Pasan 0 de 18 pruebas** (~0,9 por azar). Excesos sobre la base, netos de costos y funding:
+
+| | H = 7 | H = 14 | H = 30 |
+|---|---|---|---|
+| M1 largo (SMA 200 proyectada sube, ≥ p80) | +1,94 % (t 1,9) · A +4,7 / B −0,1 | +3,97 % (t 1,8) · B −0,4 | +8,0 % (t 1,3) · B −1,6 |
+| M1 corto (≤ p20) | −0,24 % | −0,45 % | −1,40 % |
+| M2 largo (SMA 50 proyectada sube) | +1,10 % (t 1,1) | +2,46 % (t 1,2) | +5,11 % (t 1,1) · B −1,0 |
+| M2 corto | +0,16 % | +0,56 % | +2,42 % (t 0,5) |
+| M3 largo (cruce dorado anunciado) | +1,48 % (t 0,7) | +1,32 % | +0,14 % |
+| M3 corto (cruce de la muerte anunciado) | −3,10 % | −2,76 % | +1,71 % |
+
+Lectura:
+
+- **M1 largo es lo más cerca de pasar, y es momentum.** Exceso positivo en los tres horizontes con t ≈ 1,8-1,9,
+  pero todo viene de 2020-2022 (+4,7 % a 7 días); en 2023-2025 es cero o negativo. Y el retorno simple a 190 días
+  en percentil ≥ 80 da casi lo mismo (+1,73 % t 1,8 · A +3,7 / B +0,1 a 7 días; +3,32 % a 14). Como se registró,
+  la proyección con el precio quieto es un momentum disfrazado y **no agrega nada sobre él**. Lo mismo M2 frente
+  al retorno a 45 días.
+- **Del lado corto no hay nada**: que la media vaya a bajar no anticipa bajas por encima de la base.
+- **M3 tiene muy pocos eventos** (8 dorados y 9 de la muerte desde 2020, 7 independientes) para decir algo, y los
+  excesos cambian de signo entre mitades. Lo único firme es descriptivo: **13 de los 17 cruces anunciados se dieron
+  de verdad dentro de 20 días**, con una anticipación mediana de 15 a 17 días. El indicador del panel sí avisa
+  antes del cruce; lo que no hay es ventaja en operarlo (tampoco operando el cruce real: −4,6 % a 7 días del
+  lado largo, en línea con el estudio de eventos).
+
+**Descartada sin ir al holdout.** "Proyectar medias" queda en el panel como ayuda de lectura (hacia dónde empujan
+las velas que salen del promedio y si se acerca un cruce), no como predicción del precio.
