@@ -22,6 +22,16 @@
     --series-2: #eb6834;
     --good: #0ca30c;
     --warning: #fab219;
+    /* indicadores superpuestos al precio: un color propio por indicador */
+    --ov-volume: #9a9890;
+    --ov-rsi: #8e44ad;
+    --ov-macd: #0097a7;
+    --ov-funding: #c99700;
+    --ov-oi: #c2185b;
+    --ov-ls: #4c8c00;
+    --ov-whales: #3f51b5;
+    --ov-vol: #8d5a2b;
+    --ov-fng: #607d8b;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
@@ -38,6 +48,15 @@
       --volume: #45443f;
       --series-1: #3987e5;
       --series-2: #d95926;
+      --ov-volume: #6a6963;
+      --ov-rsi: #b07cd8;
+      --ov-macd: #26c6da;
+      --ov-funding: #e0b43a;
+      --ov-oi: #f06292;
+      --ov-ls: #9ccc3a;
+      --ov-whales: #8c9eff;
+      --ov-vol: #c99a6b;
+      --ov-fng: #a0b4bf;
     }
   }
   :root[data-theme="dark"] {
@@ -53,7 +72,16 @@
     --down: #e66767;
     --volume: #45443f;
     --series-1: #3987e5;
-    --series-2: #d95926;
+      --series-2: #d95926;
+    --ov-volume: #6a6963;
+    --ov-rsi: #b07cd8;
+    --ov-macd: #26c6da;
+    --ov-funding: #e0b43a;
+    --ov-oi: #f06292;
+    --ov-ls: #9ccc3a;
+    --ov-whales: #8c9eff;
+    --ov-vol: #c99a6b;
+    --ov-fng: #a0b4bf;
   }
 
   * { box-sizing: border-box; }
@@ -142,6 +170,7 @@
     padding: 2px 6px; border-radius: 4px; white-space: nowrap;
   }
   .pane-label b { color: var(--text-primary); font-weight: 600; }
+  .pane-label .box.ov { margin-left: 0; opacity: 1; }
   .sw { display: inline-block; width: 14px; height: 0; border-top: 2px solid; vertical-align: middle; margin: 0 4px 0 8px; }
   .sw.dash { border-top-style: dashed; }
 
@@ -197,6 +226,7 @@
     <span class="muted">Eje en UTC</span>
   </div>
   <div class="chips" id="pane-chips" role="group" aria-label="Paneles del gráfico"></div>
+  <div class="chips" id="overlay-chips" role="group" aria-label="Indicadores sobre el precio"></div>
 
   <details class="card" id="freshness">
     <summary><b>Estado de las series</b><span id="fresh-summary" class="muted"></span></summary>
@@ -281,7 +311,21 @@ try {
   const saved = JSON.parse(localStorage.getItem("panes") || "null");
   if (Array.isArray(saved)) enabledPanes = ["price", ...PANES.filter((p) => p.key !== "price" && saved.includes(p.key)).map((p) => p.key)];
 } catch (e) { /* sin storage: paneles por defecto */ }
+// Indicadores dibujados sobre el panel de precio, cada uno con su escala (sin eje; el valor va en la etiqueta).
+// Un indicador está en su panel o sobre el precio, nunca en los dos.
+let overlays = [];
+try {
+  const saved = JSON.parse(localStorage.getItem("overlays") || "null");
+  if (Array.isArray(saved)) overlays = PANES.filter((p) => p.key !== "price" && saved.includes(p.key)).map((p) => p.key);
+} catch (e) { /* sin storage: ninguno */ }
+enabledPanes = enabledPanes.filter((k) => !overlays.includes(k));
 const activePanes = () => PANES.filter((p) => enabledPanes.includes(p.key));
+const isOverlay = (key) => overlays.includes(key);
+// Franja vertical del panel de precio que ocupa cada superpuesto: las barras abajo, las líneas a todo el alto
+const OVERLAY_MARGINS = { volume: { top: 0.8, bottom: 0 }, funding: { top: 0.75, bottom: 0.02 },
+  macd: { top: 0.65, bottom: 0.02 }, whales: { top: 0.65, bottom: 0.02 } };
+const alpha = (hex, a) => /^#[0-9a-f]{6}$/i.test(hex)
+  ? `rgba(${parseInt(hex.slice(1, 3), 16)},${parseInt(hex.slice(3, 5), 16)},${parseInt(hex.slice(5, 7), 16)},${a})` : hex;
 
 // Serie de mentira para los paneles apagados: el resto del código la usa sin preguntar si existe
 const NOOP = { setData() {}, update() {}, applyOptions() {}, data: () => [], createPriceLine: () => null,
@@ -295,17 +339,34 @@ function paneHeights() {
 }
 
 function renderPaneChips() {
+  const chips = (attr, on) => PANES.filter((p) => p.key !== "price").map((p) => `<button data-${attr}="${p.key}"`
+    + ` aria-pressed="${on(p.key)}"${attr === "overlay" && on(p.key) ? ` style="border-color:var(--ov-${p.key});color:var(--text-primary);background:color-mix(in srgb, var(--ov-${p.key}) 18%, var(--surface-1))"` : ""}>${p.title}</button>`).join("");
   document.getElementById("pane-chips").innerHTML = `<span class="muted" style="align-self:center">Paneles:</span>`
-    + PANES.filter((p) => p.key !== "price").map((p) =>
-      `<button data-pane="${p.key}" aria-pressed="${enabledPanes.includes(p.key)}">${p.title}</button>`).join("");
+    + chips("pane", (k) => enabledPanes.includes(k));
+  document.getElementById("overlay-chips").innerHTML = `<span class="muted" style="align-self:center">Sobre el precio:</span>`
+    + chips("overlay", isOverlay);
+}
+function savePanes() {
+  try {
+    localStorage.setItem("panes", JSON.stringify(enabledPanes));
+    localStorage.setItem("overlays", JSON.stringify(overlays));
+  } catch (e) { /* nada */ }
+  renderPaneChips();
+  rebuildChart();
 }
 document.getElementById("pane-chips").addEventListener("click", (ev) => {
   const key = ev.target.dataset && ev.target.dataset.pane;
   if (!key) return;
   enabledPanes = enabledPanes.includes(key) ? enabledPanes.filter((k) => k !== key) : [...enabledPanes, key];
-  try { localStorage.setItem("panes", JSON.stringify(enabledPanes)); } catch (e) { /* nada */ }
-  renderPaneChips();
-  rebuildChart();
+  overlays = overlays.filter((k) => k !== key);
+  savePanes();
+});
+document.getElementById("overlay-chips").addEventListener("click", (ev) => {
+  const key = ev.target.dataset && ev.target.dataset.overlay;
+  if (!key) return;
+  overlays = isOverlay(key) ? overlays.filter((k) => k !== key) : [...overlays, key];
+  enabledPanes = enabledPanes.filter((k) => k !== key);
+  savePanes();
 });
 
 // Rehace el gráfico con los paneles elegidos, conservando lo que se estaba mirando
@@ -350,7 +411,12 @@ function buildChart() {
   const usdM1 = { type: "custom", minMove: 1, formatter: (p) => nf(1).format(p / 1e6) + " M" };
 
   const idx = Object.fromEntries(activePanes().map((p, i) => [p.key, i]));
-  const add = (key, type, opts) => key in idx ? chart.addSeries(type, opts, idx[key]) : NOOP;
+  const add = (key, type, opts, scale = "") => {
+    // Sobre el precio, líneas finas: las velas siguen siendo lo principal
+    if (isOverlay(key)) return chart.addSeries(type, { ...opts, priceScaleId: `ov-${key}${scale}`,
+      priceLineVisible: false, lastValueVisible: false, ...(type === LWC.LineSeries ? { lineWidth: 1 } : {}) }, 0);
+    return key in idx ? chart.addSeries(type, opts, idx[key]) : NOOP;
+  };
 
   S.candles = chart.addSeries(LWC.CandlestickSeries, { priceFormat: usd, priceLineVisible: true }, 0);
   S.sma50 = chart.addSeries(LWC.LineSeries, { priceFormat: usd, lineWidth: 2, lineStyle: LWC.LineStyle.Dashed,
@@ -360,31 +426,35 @@ function buildChart() {
   const num1 = { type: "custom", minMove: 0.1, formatter: (p) => nf(1).format(p) };
   const num0 = { type: "custom", minMove: 1, formatter: (p) => nf(0).format(p) };
   const volPct = { type: "custom", minMove: 0.1, formatter: (p) => nf(0).format(p) + "%" };
-  const guide = (series, price) => series.createPriceLine({ price, lineWidth: 1,
+  // Las guías (30/70 del RSI, etc.) solo en su panel: sobre el precio serían líneas sueltas sin escala
+  const guide = (series, price, key) => isOverlay(key) ? null : series.createPriceLine({ price, lineWidth: 1,
     lineStyle: LWC.LineStyle.Dotted, axisLabelVisible: false, title: "" });
   const plain = { lineWidth: 2, priceLineVisible: false };
 
   S.volume = add("volume", LWC.HistogramSeries, { priceFormat: btc, priceLineVisible: false });
   S.rsi = add("rsi", LWC.LineSeries, { ...plain, priceFormat: num1 });
-  guide(S.rsi, 70); guide(S.rsi, 30);
+  guide(S.rsi, 70, "rsi"); guide(S.rsi, 30, "rsi");
   S.macdHist = add("macd", LWC.HistogramSeries, { priceFormat: num0, priceLineVisible: false, lastValueVisible: false });
   S.macd = add("macd", LWC.LineSeries, { ...plain, priceFormat: num0 });
   S.macdSignal = add("macd", LWC.LineSeries, { ...plain, priceFormat: num0, lineStyle: LWC.LineStyle.Dashed });
   S.funding = add("funding", LWC.HistogramSeries, { priceFormat: pct, priceLineVisible: false });
   S.oi = add("oi", LWC.LineSeries, { ...plain, priceFormat: usdM });
   S.lsTop = add("ls", LWC.LineSeries, { ...plain, priceFormat: ratio });
-  S.lsGlobal = add("ls", LWC.LineSeries, { ...plain, priceFormat: ratio });
-  guide(S.lsTop, 1);
+  S.lsGlobal = add("ls", LWC.LineSeries, { ...plain, priceFormat: ratio,
+    lineStyle: isOverlay("ls") ? LWC.LineStyle.Dashed : LWC.LineStyle.Solid });
+  guide(S.lsTop, 1, "ls");
   // Ballenas: flujo neto por vela (barras, eje derecho) y acumulado desde que corre el recolector (línea, escala propia sin eje; su valor va en la etiqueta)
   S.whaleNet = add("whales", LWC.HistogramSeries, { priceFormat: usdM1, priceLineVisible: false });
   S.whaleCum = add("whales", LWC.LineSeries, { ...plain, priceFormat: usdM1, priceScaleId: "whale-cum",
-    lastValueVisible: false });
-  guide(S.whaleNet, 0);
+    lastValueVisible: false }, "-cum");
+  guide(S.whaleNet, 0, "whales");
   S.dvol = add("vol", LWC.LineSeries, { ...plain, priceFormat: volPct });
   S.rv = add("vol", LWC.LineSeries, { ...plain, priceFormat: volPct, lineStyle: LWC.LineStyle.Dashed });
   S.fng = add("fng", LWC.LineSeries, { ...plain, priceFormat: num0 });
-  guide(S.fng, 75); guide(S.fng, 25);
+  guide(S.fng, 75, "fng"); guide(S.fng, 25, "fng");
 
+  for (const key of overlays) for (const id of key === "whales" ? ["ov-whales", "ov-whales-cum"] : [`ov-${key}`])
+    chart.priceScale(id, 0).applyOptions({ scaleMargins: OVERLAY_MARGINS[key] || { top: 0.08, bottom: 0.08 } });
   chart.panes().forEach((p, i) => p.setStretchFactor(heights[i]));
   applyTheme();
 
@@ -408,17 +478,19 @@ function applyTheme() {
     borderDownColor: t.down, wickUpColor: t.up, wickDownColor: t.down });
   S.sma50.applyOptions({ color: t.muted });
   S.sma200.applyOptions({ color: t.primary });
-  S.volume.applyOptions({ color: t.volume });
-  S.oi.applyOptions({ color: t.s1 });
-  S.lsTop.applyOptions({ color: t.s1 });
-  S.lsGlobal.applyOptions({ color: t.s2 });
-  S.rsi.applyOptions({ color: t.s1 });
-  S.macd.applyOptions({ color: t.s1 });
-  S.macdSignal.applyOptions({ color: t.s2 });
-  S.dvol.applyOptions({ color: t.s1 });
-  S.rv.applyOptions({ color: t.s2 });
-  S.fng.applyOptions({ color: t.primary });
-  S.whaleCum.applyOptions({ color: t.primary });
+  // Sobre el precio cada indicador lleva su color (la segunda línea, punteada); en su panel, los de siempre
+  const col = (key, fallback) => isOverlay(key) ? css(`--ov-${key}`) : fallback;
+  S.volume.applyOptions({ color: isOverlay("volume") ? alpha(t.volume, 0.6) : t.volume });
+  S.oi.applyOptions({ color: col("oi", t.s1) });
+  S.lsTop.applyOptions({ color: col("ls", t.s1) });
+  S.lsGlobal.applyOptions({ color: col("ls", t.s2) });
+  S.rsi.applyOptions({ color: col("rsi", t.s1) });
+  S.macd.applyOptions({ color: col("macd", t.s1) });
+  S.macdSignal.applyOptions({ color: col("macd", t.s2) });
+  S.dvol.applyOptions({ color: col("vol", t.s1) });
+  S.rv.applyOptions({ color: col("vol", t.s2) });
+  S.fng.applyOptions({ color: col("fng", t.primary) });
+  S.whaleCum.applyOptions({ color: col("whales", t.primary) });
   if (current.data.derivs) setFunding(current.data.derivs);
   if (current.data.candles) setWhales(current.data.whales);
   if (current.data.candles) setMacdHist(current.data.candles);
@@ -433,12 +505,15 @@ function line(t, ys) {
   return out;
 }
 
+// Barras con signo: sube/baja; sobre el precio, semitransparentes para que no se confundan con las velas
+const barColor = (key, v, t) => alpha(v >= 0 ? t.up : t.down, isOverlay(key) ? 0.4 : 1);
+
 function setFunding(d) {
   const t = theme();
   const pts = [];
   for (let i = 0; i < d.t.length; i++) {
     const v = d.funding_rate[i];
-    if (v != null) pts.push({ time: d.t[i], value: v, color: v >= 0 ? t.up : t.down });
+    if (v != null) pts.push({ time: d.t[i], value: v, color: barColor("funding", v, t) });
   }
   S.funding.setData(pts);
 }
@@ -448,7 +523,7 @@ function setMacdHist(c) {
   const pts = [];
   for (let i = 0; i < c.t.length; i++) {
     const v = c.macd_hist[i];
-    if (v != null) pts.push({ time: c.t[i], value: v, color: v >= 0 ? t.up : t.down });
+    if (v != null) pts.push({ time: c.t[i], value: v, color: barColor("macd", v, t) });
   }
   S.macdHist.setData(pts);
 }
@@ -461,7 +536,7 @@ function setWhales(w) {
     const v = w.net[i];
     if (v == null) continue;
     acc += v;
-    bars.push({ time: w.t[i], value: v, color: v >= 0 ? t.up : t.down });
+    bars.push({ time: w.t[i], value: v, color: barColor("whales", v, t) });
     cum.push({ time: w.t[i], value: acc });
   }
   S.whaleNet.setData(bars);
@@ -548,6 +623,7 @@ function renderLabels(param) {
   const val = (p) => p && p.value != null ? p.value : null;
   const daily = current.tf === "1d";
   const sw = (color, dash) => `<span class="sw${dash ? " dash" : ""}" style="border-top-color:${color}"></span>`;
+  const col = (key, fallback) => isOverlay(key) ? css(`--ov-${key}`) : fallback;
   const c = v.c;
   const html = {
     price: `Precio spot ${c ? `A <b>${fmtPrice(c.open)}</b> M <b>${fmtPrice(c.high)}</b> m <b>${fmtPrice(c.low)}</b> C <b>${fmtPrice(c.close)}</b>` : ""}`
@@ -557,18 +633,18 @@ function renderLabels(param) {
         + `<span class="box" style="background:${t.s1}"></span>área de valor 70 % <b>${fmtPrice(vp.info.val)}</b> – <b>${fmtPrice(vp.info.vah)}</b>` : ""),
     volume: `Volumen spot <b>${fmtVol(val(v.v))}</b>`,
     rsi: `RSI 14 <b>${fmtNum(val(v.rsi), 1)}</b> <span class="muted">(guías 30 y 70)</span>`,
-    macd: `MACD 12/26/9${sw(t.s1)}MACD <b>${fmtNum(val(v.m), 0)}</b>${sw(t.s2, true)}señal <b>${fmtNum(val(v.ms), 0)}</b>`
+    macd: `MACD 12/26/9${sw(col("macd", t.s1))}MACD <b>${fmtNum(val(v.m), 0)}</b>${sw(col("macd", t.s2), true)}señal <b>${fmtNum(val(v.ms), 0)}</b>`
       + ` · histograma <b>${fmtNum(val(v.mh), 0)}</b>`,
-    vol: `Volatilidad anualizada${sw(t.s1)}DVOL implícita 30 d <b>${fmtNum(val(v.dvol), 1)}%</b>`
-      + `${sw(t.s2, true)}realizada 30 d <b>${fmtNum(val(v.rv), 1)}%</b>`,
+    vol: `Volatilidad anualizada${sw(col("vol", t.s1))}DVOL implícita 30 d <b>${fmtNum(val(v.dvol), 1)}%</b>`
+      + `${sw(col("vol", t.s2), true)}realizada 30 d <b>${fmtNum(val(v.rv), 1)}%</b>`,
     fng: `Fear & Greed <b>${fmtNum(val(v.fng), 0)}</b> <span class="muted">(0 miedo extremo · 100 codicia extrema; diario)</span>`,
     funding: `${daily ? "Funding acumulado del día" : "Funding rate (cada 8 h)"} <b>${fmtPct(val(v.f))}</b>`,
     oi: `Open interest perp <b>${fmtUsdM(val(v.oi))}</b>`,
-    ls: `Ratio long/short${sw(t.s1)}top traders (posición) <b>${fmtRatio(val(v.top))}</b>`
-      + `${sw(t.s2)}todas las cuentas <b>${fmtRatio(val(v.glob))}</b>`,
+    ls: `Ratio long/short${sw(col("ls", t.s1))}top traders (posición) <b>${fmtRatio(val(v.top))}</b>`
+      + `${sw(col("ls", t.s2), isOverlay("ls"))}todas las cuentas <b>${fmtRatio(val(v.glob))}</b>`,
     whales: `Ballenas: órdenes ≥ ${fmtUsd(current.status && current.status.whales ? current.status.whales.min_usd : null)}`
       + ` (Binance spot + perp + Coinbase) · neto de la vela <b>${fmtSigned(val(v.wn))}</b>`
-      + `${sw(t.primary)}acumulado <b>${fmtSigned(val(v.wc))}</b>`
+      + `${sw(col("whales", t.primary))}acumulado <b>${fmtSigned(val(v.wc))}</b>`
       + (current.data.whales && current.data.whales.t.length ? "" : ` <span class="muted">(sin velas cerradas todavía)</span>`),
   };
   const box = document.getElementById("labels");
@@ -579,6 +655,8 @@ function renderLabels(param) {
       box.appendChild(el);
     }
   }
+  // Los superpuestos van en la etiqueta del precio, una línea cada uno con su color
+  html.price += overlays.map((k) => `<br><span class="box ov" style="background:${css(`--ov-${k}`)}"></span>${html[k]}`).join("");
   for (const el of box.children) el.innerHTML = html[el.dataset.key];
 }
 
