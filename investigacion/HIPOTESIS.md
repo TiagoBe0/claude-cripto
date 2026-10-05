@@ -266,3 +266,68 @@ hora) en percentil ≤ 10 de los últimos 7 días (mínimo 2) → |retorno| de l
 
 **P6 · Vuelven los bots, en vivo.** Profundidad de la hora en percentil ≥ 50 después de que el mínimo de las 6
 horas anteriores estuvo ≤ 10, con BTC que bajó en esas 6 horas → **largo**; que subió → **corto**.
+
+---
+
+# Ronda 6 · medias móviles proyectadas (registrada el 2026-10-05, antes de correrla)
+
+Sale del indicador "Proyectar medias" del panel. La SMA de N dentro de k velas promedia N cierres, de los que
+N − k ya ocurrieron: con el precio quieto en el cierre de hoy P, el cambio proyectado es exacto,
+
+    SMA_N(t + k) − SMA_N(t) = k · (P − promedio de los k cierres más viejos de la ventana) / N.
+
+O sea, la media proyectada sube si el precio de hoy está por encima de los cierres que van a salir del promedio.
+**Advertencia que hay que tener presente al leer el resultado:** eso es un **momentum** disfrazado. Para la SMA 200
+a 20 días compara P con los cierres de hace 181 a 200 días, y para la SMA 50 a 10 días, con los de hace 41 a 50
+días. Si algo pasa, la pregunta siguiente es si agrega algo sobre el retorno simple a 6 meses o 6 semanas. Lo que
+se pone a prueba es la idea de la usuaria del panel: que proyectar las medias ayuda a anticipar el precio.
+
+Qué se vio antes de registrar (para juzgar el sesgo):
+
+- El **estudio de eventos** (`estrategia/eventos.py`) ya midió los cruces dorado y de la muerte **reales** y el
+  cierre que cruza la SMA 200, sobre spot diario desde 2017 **incluido el período que acá es holdout**: no
+  mostraron ventaja. M3 es la versión anticipada de esos cruces, así que nace con esa información.
+- La lectura de régimen del panel (cierre contra SMA 200 diaria, 2017 en adelante, también con el holdout) dio
+  "no concluyente".
+- La proyección de hoy en el panel (1d, precio quieto en 85.872 el 2026-10-05: SMA 50 +5,2 % y SMA 200 +2,4 % en
+  20 velas), que cae en el holdout. Nunca se cruzó la proyección con el retorno siguiente.
+
+## Datos y reglas
+
+- **Medias sobre cierres diarios spot** (00:00 UTC) armados con las velas de 4 h de Binance desde 2017
+  (`data/BTCUSDT_4h.csv`), las mismas que mira el panel. Así la SMA 200 ya es válida en 2018 y los percentiles
+  tienen un año de historia cuando arranca el período.
+- Proyección con el **precio quieto** en el cierre del día de decisión (la línea punteada del panel; el rango de
+  ±1 desvío no entra porque es simétrico y no dice nada de dirección).
+- Todo lo demás, igual que la ronda 1: perpetuo BTCUSDT a 1x, decisión al cierre diario, costo 0,20 % ida y
+  vuelta más el funding real, percentiles contra los últimos 365 días (mínimo 180) con el de hoy incluido, base =
+  la misma operación todos los días, t con eventos separados al menos H días, mitades **A = 2020-2022** y
+  **B = 2023 a 2025-10-04**, holdout desde **2025-10-05** sin tocar.
+- Horizontes del orden del tramo proyectado: **H = 7, 14 y 30 días**.
+- **Pasa** igual que en la ronda 1: diferencia con la base, neta de costos, con el mismo signo favorable en las dos
+  mitades, |t| ≥ 2 en el total y al menos 20 eventos independientes. 3 hipótesis × 2 lados × 3 horizontes =
+  18 pruebas: por azar se espera ~1. Una que pase en un solo horizonte se toma con desconfianza.
+
+## Hipótesis
+
+**M1 · La SMA 200 va a subir.** Cambio proyectado de la SMA 200 a 20 días, en % de la SMA de hoy, en percentil
+≥ 80 → **largo**; ≤ 20 → **corto**.
+
+**M2 · La SMA 50 va a subir.** Lo mismo con la SMA 50 a 10 días: percentil ≥ 80 → **largo**; ≤ 20 → **corto**.
+
+**M3 · Cruce anunciado.** Hoy la SMA 50 está debajo de la 200 y, con el precio quieto, la cruza hacia arriba dentro
+de los próximos 20 días → **largo** (cruce dorado anunciado); arriba y la cruza hacia abajo → **corto** (cruce de
+la muerte anunciado). Evento = el **primer** día en que aparece el cruce anunciado (el día anterior no lo anunciaba).
+Si el cruce real ocurre antes de los 20 días, el evento sigue contando: lo que se mide es si anticiparlo sirve.
+
+## Se informa, sin que decida
+
+- Para lo que pase: la misma prueba con el retorno simple (P / cierre de hace 190 días para M1, de hace 45 días
+  para M2) en percentil ≥ 80 / ≤ 20. Si da lo mismo, la proyección no agrega nada sobre el momentum.
+- Para M3: cuántos de los cruces anunciados terminaron en un cruce real dentro de 20 días, y la diferencia de
+  resultado contra entrar el día del cruce real (lo del estudio de eventos).
+
+## Holdout (una sola corrida)
+
+Solo si alguna pasa: se corre una vez en el holdout con las mismas reglas. Pasa si la diferencia con la base tiene
+el mismo signo favorable con al menos 10 eventos independientes. Si no, se descarta sin ajustar.
