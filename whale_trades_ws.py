@@ -17,6 +17,11 @@ trades. Se reagrupan antes de compararlas con el umbral:
 - Coinbase: matches con el mismo taker_order_id.
 Las ballenas que parten la orden en pedazos chicos (TWAP, icebergs) no se ven.
 
+Además escribe <data_dir>/BTCUSDT_whale_orders.csv con cada orden >= MIN_USD por
+separado (minuto, mercado, lado, USD): de ahí salen los avisos de órdenes muy
+grandes (alertas/ballenas.py) y, con el tiempo, el estudio de qué hace el precio
+después de cada una.
+
 No hay historia: solo existe lo capturado mientras el proceso corre.
 """
 
@@ -44,6 +49,7 @@ URLS = {
     "binance_perp": f"wss://fstream.binance.com/market/ws/{SYMBOL.lower()}@aggTrade",
     "coinbase": "wss://ws-feed.exchange.coinbase.com",
 }
+ORDER_COLUMNS = ["timestamp", "datetime_utc", "market", "side", "usd"]
 MINUTE = 60_000
 
 log = logging.getLogger("whale_trades_ws")
@@ -64,7 +70,7 @@ class Buckets:
         order = orders.setdefault(key, [is_buy, 0.0])
         order[1] += usd
 
-    def flush(self, app: Appender, now_ms: int) -> None:
+    def flush(self, app: Appender, orders_app: Appender, now_ms: int) -> None:
         """Escribe los minutos ya cerrados (con 5 s de margen para trades que llegan tarde)."""
         for minute in sorted(m for m in self.data if m + MINUTE + 5000 <= now_ms):
             by_market = self.data.pop(minute)
@@ -76,6 +82,9 @@ class Buckets:
                     continue
                 wb = [u for b, u in orders.values() if b and u >= MIN_USD]
                 ws = [u for b, u in orders.values() if not b and u >= MIN_USD]
+                big = [[minute, m, "buy" if b else "sell", round(u, 2)] for b, u in orders.values() if u >= MIN_USD]
+                if big:
+                    orders_app.write(sorted(big, key=lambda r: -r[3]))
                 row += [round(sum(wb), 2), round(sum(ws), 2), len(wb), len(ws),
                         round(sum(u for b, u in orders.values() if b), 2),
                         round(sum(u for b, u in orders.values() if not b), 2)]
@@ -122,17 +131,18 @@ async def forever(market, fn, session, buckets) -> None:
         await asyncio.sleep(delay)
 
 
-async def flusher(buckets: Buckets, app: Appender) -> None:
+async def flusher(buckets: Buckets, app: Appender, orders_app: Appender) -> None:
     while True:
         await asyncio.sleep(5)
-        buckets.flush(app, int(time.time() * 1000))
+        buckets.flush(app, orders_app, int(time.time() * 1000))
 
 
 async def main(data_dir: Path) -> None:
     buckets = Buckets()
-    with Appender(data_dir / f"{SYMBOL}_whale_trades_1m.csv", COLUMNS) as app:
+    with Appender(data_dir / f"{SYMBOL}_whale_trades_1m.csv", COLUMNS) as app, \
+            Appender(data_dir / f"{SYMBOL}_whale_orders.csv", ORDER_COLUMNS) as orders_app:
         async with aiohttp.ClientSession() as session:
-            await asyncio.gather(flusher(buckets, app),
+            await asyncio.gather(flusher(buckets, app, orders_app),
                                  forever("binance_spot", binance, session, buckets),
                                  forever("binance_perp", binance, session, buckets),
                                  forever("coinbase", coinbase, session, buckets))

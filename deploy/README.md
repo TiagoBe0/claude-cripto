@@ -26,3 +26,23 @@ Todo corre como usuario, sin root.
 
 Las rutas absolutas de los servicios asumen
 `/home/simaf/sbergamin/root/claude-cripto`.
+
+## Avisos por correo (`alertas/`)
+
+Sin configuración no envían nada: cada aviso queda en `data/alertas/alertas.log` (una línea JSON por
+aviso). Para que salgan por mail, crear `~/.config/claude-cripto/alertas.env` (fuera del repo):
+
+```bash
+mkdir -p ~/.config/claude-cripto && chmod 700 ~/.config/claude-cripto
+cat > ~/.config/claude-cripto/alertas.env <<CONF
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=465
+SMTP_USER=tu.cuenta@gmail.com
+SMTP_PASS=contraseña-de-aplicación
+ALERT_TO=tu.cuenta@gmail.com
+CONF
+chmod 600 ~/.config/claude-cripto/alertas.env
+```
+
+Corren por cron (ver `crontab.txt`): `alertas.velas` a los :06 de cada hora, después del extractor, y
+`alertas.ballenas` cada minuto. Umbrales y su fundamento en el encabezado de cada archivo.

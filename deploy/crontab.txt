@@ -1,1 +1,3 @@
 2 * * * * cd /home/simaf/sbergamin/root/claude-cripto && .venv/bin/python binance_extract.py >> extract.log 2>&1
+6 * * * * cd /home/simaf/sbergamin/root/claude-cripto && .venv/bin/python -m alertas.velas >> alertas.log 2>&1
+* * * * * cd /home/simaf/sbergamin/root/claude-cripto && .venv/bin/python -m alertas.ballenas >> alertas.log 2>&1
