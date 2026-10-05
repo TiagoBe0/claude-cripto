@@ -99,7 +99,12 @@ Para verlo (el navegador no deja leer los JSON abriendo el HTML con doble clic):
 .venv/bin/python -m http.server 8000 --bind 127.0.0.1
 ```
 
-y abrir <http://127.0.0.1:8000/dashboard.html> (`#1d` para velas diarias). Se recarga solo cada 5 min.
+y abrir <http://127.0.0.1:8000/dashboard.html> (`#2h`, `#1d`, `#1w`... para elegir el timeframe). Se recarga solo cada 5 min.
+
+Timeframes: 1h, 4h y 1d son las velas bajadas de Binance; 2h, 3h y 5h se arman agrupando las de 1h (desde 2024) y 1w las de 4h
+(desde 2017), todas alineadas como Binance (semanas de lunes a domingo UTC; 3h y 5h, que Binance no tiene, en una grilla
+fija desde 1970). La vela en curso llega por el WebSocket de Binance; en 3h y 5h se arma con la parte ya cerrada que manda
+el servidor (`partial` en `chart_<tf>.json`) más la hora en vivo. Validado: 2h y 1w dan exactamente las velas de Binance.
 
 Para dejarlo siempre levantado hay un servicio de usuario de systemd
 (`~/.config/systemd/user/cripto-dashboard.service`, arranca al iniciar sesión):

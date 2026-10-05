@@ -270,8 +270,12 @@
   <div class="toolbar">
     <div class="seg" role="group" aria-label="Timeframe">
       <button data-tf="1h" aria-pressed="true">1h</button>
+      <button data-tf="2h" aria-pressed="false">2h</button>
+      <button data-tf="3h" aria-pressed="false" title="Binance no tiene velas de 3 h: se arman con las de 1 h">3h</button>
       <button data-tf="4h" aria-pressed="false">4h</button>
+      <button data-tf="5h" aria-pressed="false" title="Binance no tiene velas de 5 h: se arman con las de 1 h (grilla fija desde 1970, no arranca a las 00 cada día)">5h</button>
       <button data-tf="1d" aria-pressed="false">1d</button>
+      <button data-tf="1w" aria-pressed="false" title="Semanas de lunes a domingo (UTC), como Binance">1w</button>
     </div>
     <label class="toggle"><input type="checkbox" id="vp-toggle" checked> Perfil de volumen
       <select id="vp-source" aria-label="Volumen del perfil">
@@ -447,6 +451,16 @@ const NOOP = { setData() {}, update() {}, applyOptions() {}, data: () => [], cre
   removePriceLine() {}, priceToCoordinate: () => null };
 
 let chart, S = {}, current = { tf: "1h", data: {} };
+// Timeframes: duración en segundos. NATIVE = Binance tiene velas (y stream en vivo) de ese timeframe;
+// 3h y 5h se arman con velas de 1 h, en el servidor y en vivo (ver liveStreamTf / applyLiveHour).
+const TF_S = { "1h": 3600, "2h": 7200, "3h": 10800, "4h": 14400, "5h": 18000, "1d": 86400, "1w": 604800 };
+const NATIVE = new Set(["1h", "2h", "4h", "1d", "1w"]);
+const WEEK_ORIGIN_S = 345600;  // lunes 1970-01-05 00:00 UTC: las semanas de Binance empiezan el lunes
+// Apertura de la vela del timeframe que contiene el instante `s` (segundos)
+function bucketStart(s, tf) {
+  const p = TF_S[tf], o = tf === "1w" ? WEEK_ORIGIN_S : 0;
+  return Math.floor((s - o) / p) * p + o;
+}
 
 function paneHeights() {
   const price = MOBILE ? Math.max(340, Math.round(innerHeight * 0.55)) : Math.max(460, Math.min(680, Math.round(innerHeight * 0.62)));
@@ -742,8 +756,8 @@ function setChartData(data, keepView) {
   if (prevRange && !atRightEdge) {
     ts.setVisibleRange(prevRange);
   } else {
-    // Vista inicial: último mes en 1h, tres meses en 4h, último año en 1d
-    const n = c.t.length, span = { "1h": 24 * 30, "4h": 6 * 90, "1d": 365 }[data.timeframe] || 365;
+    // Vista inicial: ~1 mes en 1h, 2 en 2h y 3h, 3 en 4h y 5h, 1 año en 1d y 3 años en 1w
+    const n = c.t.length, span = { "1h": 24 * 30, "2h": 12 * 60, "3h": 8 * 60, "4h": 6 * 90, "5h": 24 / 5 * 90 | 0, "1d": 365, "1w": 156 }[data.timeframe] || 365;
     ts.setVisibleLogicalRange({ from: Math.max(0, n - span), to: n + 3 });
   }
   renderLabels();
@@ -780,7 +794,7 @@ function renderLabels(param) {
   const t = theme();
   const v = valuesAt(param);
   const val = (p) => p && p.value != null ? p.value : null;
-  const daily = current.tf === "1d";
+  const daily = TF_S[current.tf] >= 86400;
   const sw = (color, dash) => `<span class="sw${dash ? " dash" : ""}" style="border-top-color:${color}"></span>`;
   const col = (key, fallback) => isOverlay(key) ? css(`--ov-${key}`) : fallback;
   const c = v.c;
@@ -802,7 +816,7 @@ function renderLabels(param) {
     vol: `Volatilidad anualizada${sw(col("vol", t.s1))}DVOL implícita 30 d <b>${fmtNum(val(v.dvol), 1)}%</b>`
       + `${sw(col("vol", t.s2), true)}realizada 30 d <b>${fmtNum(val(v.rv), 1)}%</b>`,
     fng: `Fear & Greed <b>${fmtNum(val(v.fng), 0)}</b> <span class="muted">(0 miedo extremo · 100 codicia extrema; diario)</span>`,
-    funding: `${daily ? "Funding acumulado del día" : "Funding rate (cada 8 h)"} <b>${fmtPct(val(v.f))}</b>`,
+    funding: `${daily ? `Funding acumulado ${current.tf === "1w" ? "de la semana" : "del día"}` : "Funding rate (cada 8 h)"} <b>${fmtPct(val(v.f))}</b>`,
     oi: `Open interest perp <b>${fmtUsdM(val(v.oi))}</b>`,
     ls: `Ratio long/short${sw(col("ls", t.s1))}top traders (posición) <b>${fmtRatio(val(v.top))}</b>`
       + `${sw(col("ls", t.s2), isOverlay("ls"))}todas las cuentas <b>${fmtRatio(val(v.glob))}</b>`,
@@ -844,11 +858,9 @@ document.getElementById("strat-toggle").addEventListener("change", (ev) => {
   applyTheme();
 });
 
-// Un instante ISO llevado a la vela del timeframe que lo contiene (las de 1h y 4h caen justo; las de 1d al día)
+// Un instante ISO llevado a la vela del timeframe que lo contiene
 function barTime(iso, tf) {
-  const s = Date.parse(iso) / 1000;
-  const p = { "1h": 3600, "4h": 14400, "1d": 86400 }[tf];
-  return Math.floor(s / p) * p;
+  return bucketStart(Date.parse(iso) / 1000, tf);
 }
 
 function setStrategyMarkers() {
@@ -1685,7 +1697,7 @@ function tile(label, value, rows, cls = "") {
 }
 
 // ---------- franja de arriba ----------
-const live = { price: null, ticker: null, bar: null, on: false };
+const live = { price: null, ticker: null, bar: null, hours: new Map(), on: false };
 
 function renderHero(st) {
   const day = live.ticker || (st && st.day);
@@ -1861,6 +1873,11 @@ async function load(tf, keepView) {
     document.getElementById("lab").hidden = !strat;
     liq.data = lq; liq.key = "";
     current.status = st;
+    if (!NATIVE.has(tf)) {  // vela en curso de 3h / 5h: lo cerrado según el servidor más las horas en vivo
+      const hours = [...live.hours.values()];
+      if (hours.length) applyLiveHour(hours.at(-1), data.partial);
+      else if (data.partial) live.bar = { ...data.partial, time: data.partial.t };
+    }
     setChartData(data, keepView);
     renderPerformance();
     setStrategyLine(st.strategy);
@@ -1897,7 +1914,7 @@ function setLive(on, text) {
 function connectLive() {
   clearTimeout(wsTimer);
   if (ws) { ws.onclose = null; ws.close(); }
-  const url = `${WS_URLS[wsTry % WS_URLS.length]}?streams=btcusdt@ticker/btcusdt@kline_${current.tf}`;
+  const url = `${WS_URLS[wsTry % WS_URLS.length]}?streams=btcusdt@ticker/btcusdt@kline_${liveStreamTf()}`;
   let sock;
   try { sock = new WebSocket(url); } catch (e) { return retryLive(); }
   ws = sock;
@@ -1908,14 +1925,31 @@ function connectLive() {
       live.price = +data.c;
       live.ticker = { price: +data.c, change_pct: +data.P, high: +data.h, low: +data.l, volume: +data.v };
       renderHero();
-    } else if (data.k && data.k.i === current.tf) {
-      const k = data.k;
-      live.bar = { time: k.t / 1000, open: +k.o, high: +k.h, low: +k.l, close: +k.c, volume: +k.v };
+    } else if (data.k && data.k.i === liveStreamTf()) {
+      const k = data.k, bar = { time: k.t / 1000, open: +k.o, high: +k.h, low: +k.l, close: +k.c, volume: +k.v };
+      if (NATIVE.has(current.tf)) live.bar = bar;
+      else applyLiveHour(bar);
       applyLiveBar();
     }
   };
   sock.onclose = () => { if (ws === sock) retryLive(); };
   sock.onerror = () => sock.close();
+}
+
+// 3h y 5h no tienen stream: se escucha el de 1 h y la vela en curso se arma con la parte ya cerrada que
+// manda el servidor (data.partial, hasta la última hora cerrada) más las horas recibidas en vivo.
+function liveStreamTf() { return NATIVE.has(current.tf) ? current.tf : "1h"; }
+function applyLiveHour(hour, p = current.data.partial) {
+  live.hours.set(hour.time, hour);
+  const start = bucketStart(hour.time, current.tf);
+  const parts = [];
+  if (p && p.t === start) parts.push(p);
+  for (const [t, h] of [...live.hours].sort((a, b) => a[0] - b[0])) {
+    if (t >= start && (!p || p.t !== start || t > p.last_src)) parts.push(h);
+  }
+  if (!parts.length) return;
+  live.bar = { time: start, open: parts[0].open, high: Math.max(...parts.map((x) => x.high)),
+    low: Math.min(...parts.map((x) => x.low)), close: parts.at(-1).close, volume: parts.reduce((a, x) => a + x.volume, 0) };
 }
 
 function retryLive() {
@@ -1941,6 +1975,7 @@ function selectTf(tf) {
   document.querySelectorAll(".seg button").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.tf === tf)));
   history.replaceState(null, "", "#" + tf);
   live.bar = null;
+  live.hours = new Map();
   current.tf = tf;
   load(tf, false);
   connectLive();
@@ -1950,7 +1985,7 @@ renderPaneChips();
 buildChart();
 requestAnimationFrame(drawLiquidity);
 requestAnimationFrame(drawVolumeProfile);
-selectTf(["1h", "4h", "1d"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "1h");
+selectTf(location.hash.slice(1) in TF_S ? location.hash.slice(1) : "1h");
 setInterval(refresh, REFRESH_MS);
 </script>
 </body>

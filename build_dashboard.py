@@ -1,7 +1,7 @@
 """Prepara los datos del dashboard (dashboard.html) a partir de los CSV.
 
 Escribe en <data_dir>/dashboard/:
-- chart_1h.json, chart_4h.json, chart_1d.json
+- chart_<tf>.json para 1h, 2h, 3h, 4h, 5h, 1d y 1w (TIMEFRAMES)
                                  velas spot, SMA 50/200, volumen spot y perp, RSI, MACD,
                                  DVOL vs volatilidad realizada, Fear & Greed,
                                  funding, open interest y ratios long/short,
@@ -39,18 +39,27 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+import indicators
 from estrategia import backtest, regimen
 from reporte import liquidez
 import whale_trades_ws
 from storage import last_timestamp
 
 SYMBOL = "BTCUSDT"
-PERIOD_S = {"1h": 3600, "4h": 4 * 3600, "1d": 86400}
+# Timeframes del panel: None = velas bajadas de Binance; si no, se arman agrupando las de ese timeframe.
+# 3h y 5h no existen en Binance. 2h sale de 1h para no bajar otra serie; 1w sale de 4h, que llega
+# hasta 2017 (con 1d, que arranca en 2024, la SMA 200 semanal no existiría).
+TIMEFRAMES = {"1h": None, "2h": "1h", "3h": "1h", "4h": None, "5h": "1h", "1d": None, "1w": "4h"}
+PERIOD_S = {"1h": 3600, "2h": 2 * 3600, "3h": 3 * 3600, "4h": 4 * 3600, "5h": 5 * 3600, "1d": 86400, "1w": 7 * 86400}
+# En horas a propósito: pandas ignora `origin` con frecuencias en días ("1D", "7D") y las semanas quedarían
+# empezando el día de la semana del primer dato en vez del lunes.
+RULE = {"1h": "1h", "2h": "2h", "3h": "3h", "4h": "4h", "5h": "5h", "1d": "24h", "1w": "168h"}
+WEEK_ORIGIN = pd.Timestamp("2017-08-14", tz="UTC")  # un lunes: las semanas de Binance empiezan el lunes 00:00 UTC
 # Histórico que viaja al navegador. Los indicadores (SMA 200, volatilidad a 30 d)
 # se calculan con toda la serie y recién después se recorta, así que el primer
 # tramo visible no arranca con huecos. Sin recorte, el JSON de 1h pesaba 4 MB y
 # se volvía a bajar entero en cada refresco.
-HISTORY_DAYS = {"1h": 180, "4h": 730, "1d": None}
+HISTORY_DAYS = {"1h": 180, "2h": 365, "3h": 365, "4h": 730, "5h": 540, "1d": None, "1w": None}
 RV_DAYS = 30  # misma ventana que el DVOL (volatilidad implícita a 30 días)
 WHALE_MARKETS = whale_trades_ws.MARKETS
 WHALE_WINDOWS_H = [1, 4, 24]
@@ -78,6 +87,41 @@ def _read(path: Path, cols: list[str]) -> pd.DataFrame:
     df = pd.read_csv(path, usecols=["timestamp", *cols])
     df.index = pd.to_datetime(df.pop("timestamp"), unit="ms", utc=True)
     return df
+
+
+def _bucket(obj, tf: str):
+    """Resampler alineado a las velas de Binance. Con origin="epoch", 3h cae en 00/03/06... UTC y 5h en una
+    grilla fija que no se reinicia cada día (si no, la última vela del día duraría 4 h)."""
+    return obj.resample(RULE[tf], origin=WEEK_ORIGIN if tf == "1w" else "epoch")
+
+
+OHLCV = ["open", "high", "low", "close", "volume"]
+IND_COLS = ["sma_50", "sma_200", "rsi_14", "macd", "macd_signal", "macd_hist", "log_return"]
+
+
+def _candles(data_dir: Path, tf: str) -> tuple[pd.DataFrame, dict | None]:
+    """Velas cerradas con indicadores y, si el timeframe se arma agrupando, la vela en curso hasta la
+    última vela chica cerrada (el panel le suma la hora en vivo)."""
+    src = TIMEFRAMES[tf]
+    if src is None:
+        candles = _read(data_dir / f"{SYMBOL}_{tf}.csv", OHLCV)
+        return candles.join(_read(data_dir / f"{SYMBOL}_{tf}_indicators.csv", IND_COLS)), None
+    raw = _read(data_dir / f"{SYMBOL}_{src}.csv", OHLCV)
+    g = _bucket(raw, tf)
+    c = g.agg({"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"})
+    count = g.close.count()
+    complete = count == PERIOD_S[tf] // PERIOD_S[src]
+    partial = None
+    if len(c) and not complete.iloc[-1] and count.iloc[-1] > 0:
+        last = c.iloc[-1]
+        partial = {"t": int(c.index[-1].timestamp()), **{k: round(float(last[k]), 3) for k in OHLCV},
+                   "last_src": int(raw.index[-1].timestamp())}
+    c = c[complete]  # una vela con huecos de la fuente (caída de Binance) no se muestra a medias
+    df = c.reset_index(drop=True)
+    df["timestamp"] = (c.index.as_unit("ms").astype("int64")).to_numpy()
+    df["datetime_utc"] = ""
+    ind = indicators.compute(df).set_index(c.index)
+    return c.join(ind[IND_COLS]), partial
 
 
 def _columns(df: pd.DataFrame, digits: dict[str, int]) -> dict:
@@ -132,13 +176,12 @@ def strategy_lines(frame: pd.DataFrame, tf: str, grid: pd.DatetimeIndex) -> pd.D
 
 
 def chart_data(data_dir: Path, tf: str, strat: pd.DataFrame | None = None) -> dict:
-    rule = {"1h": "1h", "4h": "4h", "1d": "1D"}[tf]
-    candles = _read(data_dir / f"{SYMBOL}_{tf}.csv", ["open", "high", "low", "close", "volume"])
-    ind = _read(data_dir / f"{SYMBOL}_{tf}_indicators.csv",
-                ["sma_50", "sma_200", "rsi_14", "macd", "macd_signal", "macd_hist", "log_return"])
-    candles = candles.join(ind)
+    candles, partial = _candles(data_dir, tf)
     # Volumen del perpetuo en la grilla spot, para el perfil de volumen (spot + perp)
-    perp = _read(data_dir / f"{SYMBOL}_perp_{tf}.csv", ["volume"]).volume
+    src = TIMEFRAMES[tf] or tf
+    perp = _read(data_dir / f"{SYMBOL}_perp_{src}.csv", ["volume"]).volume
+    if TIMEFRAMES[tf]:
+        perp = _bucket(perp, tf).sum(min_count=1)
     candles["perp_volume"] = perp.reindex(candles.index)
 
     # Volatilidad realizada a 30 días, anualizada (cripto opera 24/7: 8760 h o 365 d por año)
@@ -147,29 +190,32 @@ def chart_data(data_dir: Path, tf: str, strat: pd.DataFrame | None = None) -> di
     candles["rv_30d"] = candles.pop("log_return").rolling(n).std() * np.sqrt(per_year) * 100
     dvol = _read(data_dir / "BTC_dvol_1h.csv", ["close"]).close
     if tf != "1h":
-        dvol = dvol.resample(rule).last()  # cierre de la vela
+        dvol = _bucket(dvol, tf).last()  # cierre de la vela
     candles["dvol"] = dvol.reindex(candles.index)
     # Fear & Greed es diario (00:00 UTC): en 1h cada valor se extiende a las horas de su día
     fng = _read(data_dir / "fear_greed.csv", ["value"]).value
-    candles["fng"] = fng.reindex(candles.index, method="ffill", limit=PERIOD_S["1d"] // PERIOD_S[tf] * 2)
+    if PERIOD_S[tf] > 86400:
+        candles["fng"] = _bucket(fng, tf).last().reindex(candles.index)  # semanal: el último día de la semana
+    else:
+        candles["fng"] = fng.reindex(candles.index, method="ffill", limit=PERIOD_S["1d"] // PERIOD_S[tf] * 2)
 
     # Todo se lleva a la grilla de velas: si una serie tuviera tiempos fuera
     # de ella, el eje del gráfico intercalaría barras vacías entre velas.
     funding = _read(data_dir / f"{SYMBOL}_funding.csv", ["funding_rate"])
-    if tf == "1d":
-        funding = funding.resample(rule).sum(min_count=1)  # funding acumulado del día
+    if PERIOD_S[tf] >= 86400:
+        funding = _bucket(funding, tf).sum(min_count=1)  # funding acumulado del día o de la semana
     else:
-        funding.index = funding.index.floor(rule)  # vienen con +1 ms a veces
+        funding.index = funding.index.floor(RULE[tf])  # vienen con +1 ms a veces (floor usa la misma grilla epoch)
     metrics = _read(data_dir / f"{SYMBOL}_metrics_5m.csv",
                     ["open_interest_usd", "top_trader_position_ls_ratio", "global_account_ls_ratio"])
-    metrics = metrics.resample(rule).last()  # niveles: el último valor de cada vela
+    metrics = _bucket(metrics, tf).last()  # niveles: el último valor de cada vela
     derivs = funding.join(metrics, how="outer").dropna(how="all")
     # Las métricas llegan hasta hace 5 min; se cortan en la última vela
     # cerrada para no mostrar la hora (o el día) en curso.
     derivs = derivs[derivs.index <= candles.index[-1]]
 
     strat_cols = {}
-    if strat is not None:
+    if strat is not None and tf in ("1h", "4h", "1d"):  # las líneas de la estrategia 4h, solo en la grilla nativa
         candles = candles.join(strategy_lines(strat, tf, candles.index))
         strat_cols = {"strat_ema": 2, "strat_don": 2, "strat_stop": 2}
 
@@ -178,10 +224,11 @@ def chart_data(data_dir: Path, tf: str, strat: pd.DataFrame | None = None) -> di
         candles = candles[candles.index >= start]
         derivs = derivs[derivs.index >= start]
 
-    whales = whale_candles(data_dir, rule, candles.index)
+    whales = whale_candles(data_dir, tf, candles.index)
 
     return {
         "timeframe": tf,
+        "partial": partial,
         "candles": _columns(candles, {"open": 2, "high": 2, "low": 2, "close": 2,
                                       "volume": 3, "perp_volume": 3, "sma_50": 2, "sma_200": 2, "rsi_14": 2,
                                       "macd": 2, "macd_signal": 2, "macd_hist": 2,
@@ -239,7 +286,7 @@ def _whale_minutes(data_dir: Path) -> pd.DataFrame | None:
     return df.drop(columns="datetime_utc")
 
 
-def whale_candles(data_dir: Path, rule: str, grid: pd.DatetimeIndex) -> pd.DataFrame | None:
+def whale_candles(data_dir: Path, tf: str, grid: pd.DatetimeIndex) -> pd.DataFrame | None:
     """Flujo neto de ballenas (compra - venta, USD) por vela: total y por mercado."""
     df = _whale_minutes(data_dir)
     if df is None:
@@ -247,7 +294,7 @@ def whale_candles(data_dir: Path, rule: str, grid: pd.DatetimeIndex) -> pd.DataF
     out = pd.DataFrame(index=df.index)
     for m in WHALE_MARKETS:
         out[m] = df[f"{m}_whale_buy_usd"] - df[f"{m}_whale_sell_usd"]
-    out = out.resample(rule).sum(min_count=1)
+    out = _bucket(out, tf).sum(min_count=1)
     out["net"] = out[WHALE_MARKETS].sum(axis=1, min_count=1)
     # Solo velas cerradas y dentro de la grilla de velas spot
     return out[out.index.isin(grid)].dropna(how="all")
