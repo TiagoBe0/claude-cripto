@@ -282,6 +282,10 @@
         <option value="both">spot + perp</option><option value="spot">spot</option><option value="perp">perp</option>
       </select></label>
     <label class="toggle"><input type="checkbox" id="liq-toggle" checked> Mapa de liquidez</label>
+    <label class="toggle" title="SMA 50 y 200 hacia adelante: la parte de la ventana que ya pasó es exacta; el resto supone el precio quieto (línea) o moviéndose ±1 desvío típico (rango)"><input type="checkbox" id="proj-toggle" checked> Proyectar medias
+      <select id="proj-bars" aria-label="Velas a proyectar">
+        <option value="10">10 velas</option><option value="20">20 velas</option><option value="50">50 velas</option>
+      </select></label>
     <label class="toggle" id="strat-toggle-label" hidden><input type="checkbox" id="strat-toggle" checked> Estrategia 4h</label>
     <span class="spacer"></span>
     <a href="ayuda.html" class="muted" title="Cómo leer cada indicador y qué valores mirar">Ayuda: cómo leer el panel</a>
@@ -554,6 +558,12 @@ function buildChart() {
     priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }, 0);
   // Estrategia 4h: EMA 1200 (filtro de tendencia), canal Donchian 120 (precio a superar) y stop trailing
   const quiet = { priceFormat: usd, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false };
+  // Proyección de las medias: línea con el precio quieto, rango con ±1 desvío (más tenue)
+  for (const k of ["proj50", "proj200"]) {
+    S[k] = chart.addSeries(LWC.LineSeries, { ...quiet, lineWidth: 2, lineStyle: LWC.LineStyle.Dotted }, 0);
+    S[k + "Hi"] = chart.addSeries(LWC.LineSeries, { ...quiet, lineWidth: 1, lineStyle: LWC.LineStyle.Dotted }, 0);
+    S[k + "Lo"] = chart.addSeries(LWC.LineSeries, { ...quiet, lineWidth: 1, lineStyle: LWC.LineStyle.Dotted }, 0);
+  }
   S.stratEma = chart.addSeries(LWC.LineSeries, { ...quiet, lineWidth: 2 }, 0);
   S.stratDon = chart.addSeries(LWC.LineSeries, { ...quiet, lineWidth: 1, lineStyle: LWC.LineStyle.Dotted,
     lineType: LWC.LineType.WithSteps }, 0);
@@ -615,6 +625,11 @@ function applyTheme() {
     borderDownColor: t.down, wickUpColor: t.up, wickDownColor: t.down });
   S.sma50.applyOptions({ color: t.muted });
   S.sma200.applyOptions({ color: t.primary });
+  for (const [k, color] of [["proj50", t.muted], ["proj200", t.primary]]) {
+    S[k].applyOptions({ color, visible: proj.on });
+    S[k + "Hi"].applyOptions({ color: alpha(color, 0.5), visible: proj.on });
+    S[k + "Lo"].applyOptions({ color: alpha(color, 0.5), visible: proj.on });
+  }
   const strat = css("--strat");
   for (const k of ["stratEma", "stratDon", "stratStop"]) S[k].applyOptions({ visible: stratOn });
   S.stratEma.applyOptions({ color: strat });
@@ -751,6 +766,7 @@ function setChartData(data, keepView) {
   S.rv.setData(line(c.t, c.rv_30d));
   S.fng.setData(line(c.t, c.fng));
   setWhales(data.whales);
+  setProjection();
   applyLiveBar();
 
   if (prevRange && !atRightEdge) {
@@ -758,7 +774,7 @@ function setChartData(data, keepView) {
   } else {
     // Vista inicial: ~1 mes en 1h, 2 en 2h y 3h, 3 en 4h y 5h, 1 año en 1d y 3 años en 1w
     const n = c.t.length, span = { "1h": 24 * 30, "2h": 12 * 60, "3h": 8 * 60, "4h": 6 * 90, "5h": 24 / 5 * 90 | 0, "1d": 365, "1w": 156 }[data.timeframe] || 365;
-    ts.setVisibleLogicalRange({ from: Math.max(0, n - span), to: n + 3 });
+    ts.setVisibleLogicalRange({ from: Math.max(0, n - span), to: n + 3 + (proj.on ? proj.bars : 0) });
   }
   renderLabels();
   requestAnimationFrame(positionLabels);
@@ -801,6 +817,7 @@ function renderLabels(param) {
   const html = {
     price: `Precio spot ${c ? `A <b>${fmtPrice(c.open)}</b> M <b>${fmtPrice(c.high)}</b> m <b>${fmtPrice(c.low)}</b> C <b>${fmtPrice(c.close)}</b>` : ""}`
       + `${sw(t.muted, true)}SMA 50 <b>${fmtPrice(val(v.s50))}</b>${sw(t.primary)}SMA 200 <b>${fmtPrice(val(v.s200))}</b>`
+      + projLabel()
       + (stratOn && current.data.candles && current.data.candles.strat_ema
         ? `<br>Estrategia 4h${sw(css("--strat"))}EMA 1200 <b>${fmtPrice(val(v.se))}</b>`
           + `${sw(css("--strat"), true)}Donchian 120 <b>${fmtPrice(val(v.sd))}</b>`
@@ -857,6 +874,91 @@ document.getElementById("strat-toggle").addEventListener("change", (ev) => {
   try { localStorage.setItem("strat", stratOn ? "1" : "0"); } catch (e) { /* nada */ }
   applyTheme();
 });
+
+// ---------- proyección de las SMA 50 y 200 ----------
+// La SMA de N dentro de j velas promedia N cierres, de los que N − j ya ocurrieron: esa parte es exacta y
+// solo los j cierres futuros se suponen. Línea: precio quieto en el último (el en vivo si hay vela en curso).
+// Rango: el precio yendo de forma pareja a ±1 desvío típico al final del tramo (desvío de los log-retornos
+// de las últimas 100 velas × √velas). No predice el precio: muestra hacia dónde empujan las velas que salen.
+const proj = { on: true, bars: 20, info: null };
+try {
+  const v = localStorage.getItem("proj"); if (v != null) proj.on = v !== "0";
+  const b = +localStorage.getItem("proj-bars"); if ([10, 20, 50].includes(b)) proj.bars = b;
+} catch (e) { /* sin storage: valores por defecto */ }
+document.getElementById("proj-toggle").checked = proj.on;
+document.getElementById("proj-bars").value = String(proj.bars);
+document.getElementById("proj-toggle").addEventListener("change", (ev) => {
+  proj.on = ev.target.checked;
+  try { localStorage.setItem("proj", proj.on ? "1" : "0"); } catch (e) { /* nada */ }
+  applyTheme(); setProjection();
+});
+document.getElementById("proj-bars").addEventListener("change", (ev) => {
+  proj.bars = +ev.target.value;
+  try { localStorage.setItem("proj-bars", String(proj.bars)); } catch (e) { /* nada */ }
+  setProjection();
+});
+
+// SMA de n sobre los cierres conocidos seguidos de `path` (cierres supuestos): un valor por vela futura
+function projectSma(closes, n, path) {
+  const tail = closes.slice(-n);
+  if (tail.length < n || tail.some((x) => x == null)) return null;
+  const all = tail.concat(path);
+  let sum = tail.reduce((a, x) => a + x, 0);
+  return path.map((p, j) => (sum += p - all[j]) / n);
+}
+
+function setProjection() {
+  const c = current.data.candles;
+  const series = ["proj50", "proj200"].flatMap((k) => [k, k + "Hi", k + "Lo"]);
+  if (!S.proj50 || !c || !c.t.length || !proj.on) {
+    proj.info = null;
+    for (const k of series) if (S[k]) S[k].setData([]);
+    renderLabels();
+    return;
+  }
+  const t0 = c.t[c.t.length - 1], step = TF_S[current.tf], k = proj.bars;
+  const b = live.bar && live.bar.time > t0 ? live.bar : null;
+  const price = b ? b.close : c.close[c.close.length - 1];
+  const rets = [];
+  for (let i = Math.max(1, c.close.length - 100); i < c.close.length; i++) rets.push(Math.log(c.close[i] / c.close[i - 1]));
+  const mean = rets.reduce((a, x) => a + x, 0) / rets.length;
+  const sigma = Math.sqrt(rets.reduce((a, x) => a + (x - mean) ** 2, 0) / (rets.length - 1));
+  const move = sigma * Math.sqrt(k);
+  const path = (s) => Array.from({ length: k }, (_, j) => price * Math.exp(s * move * (j + 1) / k));
+  const times = Array.from({ length: k }, (_, j) => t0 + step * (j + 1));
+  const info = { bars: k, price, move, cross: null };
+  for (const [key, n, known] of [["proj50", 50, c.sma_50], ["proj200", 200, c.sma_200]]) {
+    const start = known[known.length - 1];
+    const runs = { "": projectSma(c.close, n, path(0)), Hi: projectSma(c.close, n, path(1)), Lo: projectSma(c.close, n, path(-1)) };
+    for (const [suf, ys] of Object.entries(runs)) {
+      // Arranca en el último valor real para que siga a la línea de la media
+      S[key + suf].setData(ys && start != null ? [{ time: t0, value: start }, ...ys.map((value, j) => ({ time: times[j], value }))] : []);
+    }
+    info[n] = runs[""] ? { end: runs[""][k - 1], hi: runs.Hi[k - 1], lo: runs.Lo[k - 1], now: start, path: runs[""] } : null;
+  }
+  // ¿Se cruzan la 50 y la 200 dentro del tramo si el precio se queda quieto?
+  if (info[50] && info[200] && info[50].now != null && info[200].now != null) {
+    const side = Math.sign(info[50].now - info[200].now);
+    const j = info[50].path.findIndex((v, i) => Math.sign(v - info[200].path[i]) !== side);
+    if (j >= 0) info.cross = { bars: j + 1, golden: side < 0 };
+  }
+  proj.info = info;
+  renderLabels();
+}
+
+function projLabel() {
+  const p = proj.info;
+  if (!proj.on || !p) return "";
+  const t = theme();
+  const sw = (color) => `<span class="sw dash" style="border-top-color:${color}"></span>`;
+  const chg = (x) => `<span class="${x >= 0 ? "pos" : "neg"}">${x >= 0 ? "+" : "−"}${nf(1).format(Math.abs(x * 100))} %</span>`;
+  const one = (n, color) => p[n] ? `${sw(color)}SMA ${n} → <b>${fmtPrice(p[n].end)}</b> (${chg(p[n].end / p[n].now - 1)})`
+    + ` <span class="muted">rango ${fmtPrice(p[n].lo)} – ${fmtPrice(p[n].hi)}</span>` : "";
+  const cross = p.cross ? ` · <b>${p.cross.golden ? "cruce dorado" : "cruce de la muerte"}</b> en ~${p.cross.bars} velas si el precio se queda` : "";
+  return `<br>Proyección a ${p.bars} velas con el precio quieto en <b>${fmtPrice(p.price)}</b>`
+    + ` <span class="muted">(rango: ±${nf(1).format(p.move * 100)} % en el tramo)</span>`
+    + one(50, t.muted) + one(200, t.primary) + cross;
+}
 
 // Un instante ISO llevado a la vela del timeframe que lo contiene
 function barTime(iso, tf) {
@@ -1966,6 +2068,7 @@ function applyLiveBar() {
   if (b.time < c.t[c.t.length - 1] || (last.length && b.time < last[last.length - 1].time)) return;
   S.candles.update({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close });
   S.volume.update({ time: b.time, value: b.volume });
+  setProjection();
 }
 
 document.querySelectorAll(".seg button").forEach((b) => b.addEventListener("click", () => selectTf(b.dataset.tf)));

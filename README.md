@@ -122,6 +122,10 @@ systemctl --user disable --now cripto-dashboard  # desinstalar
   (cierre de 4 h que dispara la compra, o el stop si hay posición), volumen, RSI 14, MACD 12/26/9, funding,
   open interest, ratios long/short, DVOL contra volatilidad realizada a 30 días (anualizada) y Fear & Greed.
   En 1d el funding es el acumulado del día.
+- *Proyectar medias* (interruptor arriba, 10/20/50 velas): SMA 50 y 200 hacia adelante, punteadas. La parte de la
+  ventana que ya ocurrió es exacta; los cierres futuros se suponen iguales al último (línea) o yendo a ±1 desvío
+  típico en el tramo (líneas tenues, desvío de las últimas 100 velas × √velas). Avisa si se cruzan dentro del tramo.
+  Se calcula en el navegador, con la vela en vivo.
 - *Mapa de liquidez* (interruptor arriba, se recuerda en el navegador), sobre el panel de precio:
   barras horizontales con las liquidaciones **estimadas** por tramo de 0,5% hasta ±15% del precio (rojo = largos,
   azul = cortos, con el monto en los 3 tramos mayores de cada lado), líneas punteadas en los máximos y mínimos sin
