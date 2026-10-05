@@ -97,3 +97,27 @@ Lectura:
 
 **Descartada sin ir al holdout.** La emisión de stablecoins queda como dato de contexto en el panel (cuánta liquidez
 nueva hay), no como señal de entrada.
+
+## Ronda 5, parte histórica (2026-10-05) · liquidez de Amihud · NO PASA
+
+`python -m investigacion.ronda5` · reglas registradas antes de correrla (bae2178) · tabla en `data/research/ronda5.csv`.
+
+**Pasan 0 de 18 pruebas** (~0,9 por azar).
+
+**L1 dio al revés de lo esperado.** Contra días con la misma volatilidad pasada, los días de iliquidez alta
+(≥ p80) fueron seguidos de **menos** volatilidad, no de más: −7,4 % a 1 día (t −2,1) y −9,3 % a 7 días (t −2,5),
+negativo en las dos mitades a 1 y 7 días. Y los días de iliquidez baja (≤ p20), de algo más (+4,2 % a 1 día,
+t 2,7, positivo en las dos mitades). Como estaba registrado esperando el signo contrario, **no pasa**, y no se
+da vuelta la hipótesis después de verla.
+
+Lectura probable, sin probar: la iliquidez de Amihud con velas de 1 h está dominada por el **volumen** (el
+denominador), no por la retirada de market makers. Los días de poco volumen (fines de semana, feriados) dan
+iliquidez alta y son días tranquilos, seguidos de días tranquilos; los de mucho volumen, al revés. O sea que con
+velas no se mide lo que se quería medir: hace falta ver el libro directamente, que es lo que junta la parte en
+vivo (`libro_1m.py`, hipótesis P5 y P6).
+
+**L2 y L3** (dirección) tienen pocos eventos (menos de 20 por mitad) y excesos que cambian de signo entre mitades:
+nada. Con este proxy, la liquidez tampoco da dirección.
+
+Si se quisiera estudiar el patrón de L1 ("poco volumen hoy → poca volatilidad después"), sería una hipótesis nueva,
+registrada aparte y con el día de la semana como control.
