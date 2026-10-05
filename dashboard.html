@@ -96,7 +96,7 @@
     font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
     font-variant-numeric: tabular-nums;
   }
-  main { max-width: 1600px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+  main { max-width: 1600px; margin: 0 auto; padding: 12px 16px; display: grid; gap: 8px; }
 
   header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
   h1 { font-size: 18px; margin: 0; font-weight: 600; }
@@ -111,21 +111,23 @@
 
   .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; }
 
-  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
-  .tile { padding: 12px 14px; }
+  /* Métricas densas: columnas de "dato … valor", sin tarjetas grandes */
+  .tiles { display: grid; gap: 0; }
+  .tile { padding: 3px 0 4px; border: 0; border-top: 1px solid var(--border); border-radius: 0; background: none; }
+  .tile:first-child { border-top: 0; }
+  .tile .head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
   .tile .label { color: var(--text-secondary); font-size: 12px; }
-  .tile .value { font-size: 22px; font-weight: 600; margin-top: 2px; }
-  .tile .sub { color: var(--text-muted); font-size: 12px; }
-  .tile .rows { margin-top: 6px; display: grid; gap: 2px; font-size: 12px; color: var(--text-muted); }
+  .tile .value { font-size: 13px; font-weight: 700; text-align: right; }
+  .tile .rows { display: grid; gap: 0; font-size: 12px; line-height: 1.3; color: var(--text-muted); }
   .tile .rows div { display: flex; justify-content: space-between; gap: 8px; }
   .tile .rows b { color: var(--text-secondary); font-weight: 500; text-align: right; }
 
   /* Franja de arriba: precio en vivo y lectura rápida */
-  .hero { display: flex; flex-wrap: wrap; gap: 16px 32px; align-items: center; padding: 16px 18px; }
-  .hero .price { font-size: 40px; font-weight: 700; letter-spacing: -0.02em; line-height: 1; transition: color .6s; }
+  .hero { display: flex; flex-wrap: wrap; gap: 6px 20px; align-items: center; padding: 8px 12px; }
+  .hero .price { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; line-height: 1; transition: color .6s; }
   .hero .price.tick-up { color: var(--up); transition: none; }
   .hero .price.tick-down { color: var(--down); transition: none; }
-  .hero .meta { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 8px; color: var(--text-muted); font-size: 12px; }
+  .hero .meta { display: flex; flex-wrap: wrap; gap: 2px 12px; margin-top: 4px; color: var(--text-muted); font-size: 12px; }
   .hero .meta b { color: var(--text-secondary); font-weight: 500; }
   .chg { display: inline-block; padding: 3px 8px; border-radius: 6px; font-size: 14px; font-weight: 600; margin-left: 10px; vertical-align: 8px; }
   .chg.up { color: var(--up); background: color-mix(in srgb, var(--up) 12%, transparent); }
@@ -134,15 +136,17 @@
   .live .dot.live-on { background: var(--good); animation: blink 1.6s ease-in-out infinite; }
   .live .dot.live-off { background: var(--warning); }
   @keyframes blink { 50% { opacity: .35; } }
-  .verdicts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; flex: 1 1 520px; }
-  .verdict { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
-  .verdict .k { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; }
-  .verdict .v { font-size: 16px; font-weight: 600; margin-top: 2px; }
+  .verdicts { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 4px; flex: 1 1 520px; }
+  .verdict { border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; }
+  .verdict .k { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; }
+  .verdict .v { font-size: 13px; font-weight: 600; }
   .verdict .v.up { color: var(--up); } .verdict .v.down { color: var(--down); }
   .verdict .s { font-size: 12px; color: var(--text-muted); }
 
-  .groups { display: grid; gap: 14px; }
-  .group h2 { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; margin: 0 0 6px 2px; }
+  .groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px; align-items: start; }
+  .group { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
+  .group h2 { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; margin: 0 0 2px; }
+  .tile.alert { border-top-color: var(--warning); box-shadow: inset 3px 0 0 var(--warning); padding-left: 6px; }
 
   .toolbar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -163,7 +167,6 @@
   }
   .liq-legend .box { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: middle; margin: 0 4px 0 8px; }
   .toggle { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); cursor: pointer; }
-  .tile.alert { border-color: var(--warning); box-shadow: inset 0 0 0 1px var(--warning); }
 
   .chart-card { position: relative; height: 1100px; overflow: hidden; }
   #chart { position: absolute; inset: 0; }
@@ -189,12 +192,13 @@
   .scroll-x { overflow-x: auto; }
   .pos { color: var(--up); } .neg { color: var(--down); }
   @media (max-width: 900px) { .perf-grid { grid-template-columns: 1fr; } }
-  .regime { padding: 14px; display: grid; gap: 10px; }
-  .regime h2 { font-size: 15px; margin: 0; font-weight: 600; }
-  .regime .lead { margin: 0; font-size: 14px; max-width: 1000px; }
-  .regime .note { margin: 0; color: var(--text-muted); font-size: 12px; max-width: 1000px; }
+  .regime { padding: 8px 10px; display: grid; gap: 4px; }
+  .regime th, .regime td { padding: 2px 8px; font-size: 12px; }
+  .regime h2 { font-size: 13px; margin: 0; font-weight: 600; }
+  .regime .lead { margin: 0; font-size: 12px; }
+  .regime .note { margin: 0; color: var(--text-muted); font-size: 11px; }
   .regime td.state { font-weight: 600; }
-  .regime tr.sub th { color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; padding-top: 12px; }
+  .regime tr.sub th { color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; padding-top: 4px; }
   .regime tr.base td { color: var(--text-muted); }
   .holds { font-weight: 600; }
   .lab { padding: 0; }
@@ -225,10 +229,7 @@
 
   @media (max-width: 640px) {
     main { padding: 16px; }
-    .tile .value { font-size: 18px; }
-    .hero .price { font-size: 32px; }
-    .tiles { grid-template-columns: 1fr 1fr; gap: 8px; }
-    .tile { padding: 10px; }
+    .hero .price { font-size: 24px; }
     .pane-label { white-space: normal; max-width: calc(100% - 80px); font-size: 11px; }
     th, td { padding: 6px 8px; }
   }
@@ -239,7 +240,7 @@
   <section class="card hero" aria-label="Precio y lectura rápida">
     <div>
       <h1>BTC/USDT <span class="live" id="live"><span class="dot live-off"></span><span>conectando…</span></span></h1>
-      <div style="margin-top:8px"><span class="price" id="price">–</span><span class="chg" id="chg"></span></div>
+      <div style="margin-top:2px"><span class="price" id="price">–</span><span class="chg" id="chg"></span></div>
       <div class="meta" id="day-meta"></div>
     </div>
     <div class="verdicts" id="verdicts"></div>
@@ -1465,6 +1466,8 @@ function renderStatus(st) {
         tile("Open interest", nf(0).format(s.open_interest) + " BTC", [["en dólares", fmtUsdM(s.open_interest * s.mark_price)]]),
         liquidationsTile(st.liquidations),
       ]),
+      ...(() => { const t = techTiles(current.data);
+        return [group(`Precio y técnicos · ${current.tf}`, t.slice(0, 3)), group("Volatilidad y posicionamiento", t.slice(3))]; })(),
       group("Flujo y señales", [whalesTile(st.whales), ...[strategyTile(st.strategy)].flat(), ...executorTile(st.executor), ...mlTile(st.ml),
         ...paperTiles(st.paper)]),
     ].join("");
@@ -1490,10 +1493,60 @@ function renderStatus(st) {
     : `<span class="status"><span class="dot good"></span>✓ todas al día</span>`;
 }
 
+// Métricas que salen de las series del gráfico ya cargado (cambian con el timeframe elegido).
+// Las variaciones buscan la vela de hace X segundos: con velas más largas que X quedan en "–".
+function techTiles(d) {
+  const c = d && d.candles, dv = d && d.derivs;
+  if (!c || !c.t.length) return [tile("Técnicos", "–", [["estado", "sin datos"]])];
+  const lastIdx = (s, col) => { for (let i = s.t.length - 1; i >= 0; i--) if (s[col][i] != null) return i; return -1; };
+  const last = (s, col) => { const i = lastIdx(s, col); return i < 0 ? null : s[col][i]; };
+  // Valor al cierre de la última vela cerrada hace `secs` o más. Null si la vela dura más que `secs`
+  // (en 1d no hay variación de 1 h) o si la serie no llega tan atrás.
+  const ago = (s, col, secs) => {
+    const n = s.t.length, period = n > 1 ? s.t[n - 1] - s.t[n - 2] : null;
+    if (!period || period > secs) return null;
+    const limit = Date.now() / 1000 - secs;
+    for (let j = n - 1; j >= 0; j--) if (s.t[j] + period <= limit) return s[col][j];
+    return null;
+  };
+  const pctOf = (a, b) => a == null || b == null || !b ? null : a / b - 1;
+  const sp = (x, d = 2) => x == null ? "–" : `<span class="${x >= 0 ? "pos" : "neg"}">${x >= 0 ? "+" : "−"}${nf(d).format(Math.abs(x * 100))} %</span>`;
+  const close = live.price != null ? live.price : last(c, "close");
+  const H = 3600, D = 86400;
+  const chg = (secs) => sp(pctOf(close, ago(c, "close", secs)));
+  // 24 h exacto del ticker (vivo o del cron); con velas diarias la cuenta por velas puede correrse un día
+  const day = live.ticker || (current.status && current.status.day);
+  const chg24 = day && day.change_pct != null ? sp(day.change_pct / 100) : chg(D);
+  const tiles = [tile("Variación", chg24 + " 24 h", [["1 h · 4 h", `${chg(H)} · ${chg(4 * H)}`],
+    ["7 d · 30 d", `${chg(7 * D)} · ${chg(30 * D)}`]])];
+
+  const sma50 = last(c, "sma_50"), sma200 = last(c, "sma_200");
+  const rsi = last(c, "rsi_14"), hist = last(c, "macd_hist"), histPrev = (() => {
+    const i = lastIdx(c, "macd_hist"); return i > 0 ? c.macd_hist[i - 1] : null; })();
+  tiles.push(tile("Medias", `SMA 200 ${sp(pctOf(close, sma200), 1)}`, [["SMA 50", `${fmtPrice(sma50)} (${sp(pctOf(close, sma50), 1)})`],
+    ["SMA 200", fmtPrice(sma200)], ["SMA 50 vs 200", sp(pctOf(sma50, sma200), 1)]]));
+  tiles.push(tile("Momentum", `RSI ${fmtNum(rsi, 1)}`, [["MACD · señal", `${fmtNum(last(c, "macd"), 0)} · ${fmtNum(last(c, "macd_signal"), 0)}`],
+    ["histograma", `${fmtNum(hist, 0)} ${hist != null && histPrev != null ? (Math.abs(hist) > Math.abs(histPrev) ? "↑ crece" : "↓ cae") : ""}`]]));
+
+  const dvol = last(c, "dvol"), rv = last(c, "rv_30d");
+  tiles.push(tile("Volatilidad 30 d", `DVOL ${fmtNum(dvol, 1)} %`, [["realizada (anual)", rv == null ? "–" : nf(1).format(rv) + " %"],
+    ["implícita − realizada", dvol == null || rv == null ? "–" : (dvol >= rv ? "+" : "−") + nf(1).format(Math.abs(dvol - rv)) + " pts"],
+    ["Fear & Greed", fmtNum(last(c, "fng"), 0)]]));
+
+  if (dv && dv.t.length) {
+    const oi = last(dv, "open_interest_usd");
+    const ls = (col) => { const v = last(dv, col), a = ago(dv, col, D);
+      return v == null ? "–" : fmtRatio(v) + (a == null ? "" : ` (${v >= a ? "+" : "−"}${fmtRatio(Math.abs(v - a))})`); };
+    tiles.push(tile("Open interest (USD)", fmtUsdM(oi), [["24 h · 7 d", `${sp(pctOf(oi, ago(dv, "open_interest_usd", D)), 1)} · ${sp(pctOf(oi, ago(dv, "open_interest_usd", 7 * D)), 1)}`],
+      ["L/S top traders (posición)", ls("top_trader_position_ls_ratio")], ["L/S cuentas (todas)", ls("global_account_ls_ratio")]]));
+  }
+  return tiles;
+}
+
 // Tarjeta: etiqueta, valor grande y filas "dato — valor" (más fácil de leer que una línea corrida)
 function tile(label, value, rows, cls = "") {
   const body = (rows || []).map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join("");
-  return `<div class="card tile${cls}"><div class="label">${label}</div><div class="value">${value}</div>`
+  return `<div class="tile${cls}"><div class="head"><span class="label">${label}</span><span class="value">${value}</span></div>`
     + (body ? `<div class="rows">${body}</div>` : "") + `</div>`;
 }
 
@@ -1591,7 +1644,7 @@ function mlTile(m) {
     ["en vivo", live],
     ["vela", m.candle_open_utc.slice(5, 16).replace("T", " ") + " UTC"],
   ];
-  return [tile(`Modelo ML · próximas ${m.horizon_h} h`, mlLevel(m), rows, m.p_move_pctile_90d >= 80 ? " alert" : "")];
+  return [tile(`Modelo ML ${m.horizon_h} h`, mlLevel(m), rows, m.p_move_pctile_90d >= 80 ? " alert" : "")];
 }
 
 // Ejecutor (estrategia/ejecutor.py): la estrategia 4h operando de verdad en Binance spot (testnet o real)
@@ -1629,7 +1682,7 @@ function paperTiles(p) {
 }
 
 function liquidationsTile(liq) {
-  const label = "Liquidaciones 24 h (Binance + Bybit)";
+  const label = `<span title="Binance + Bybit">Liquidaciones 24 h</span>`;
   if (!liq || liq.since == null) return tile(label, "–", [["estado", "sin datos del recolector"]]);
   const longs = liq.long_usd_24h, shorts = liq.short_usd_24h;
   return tile(label, fmtUsd(longs + shorts), [["largos", fmtUsd(longs)], ["cortos", fmtUsd(shorts)],
@@ -1648,7 +1701,7 @@ function whalesTile(w) {
   const tt = w.top_traders;
   if (tt) rows.push(["top traders L/S", fmtRatio(tt.ratio)
     + (tt.change_24h != null ? ` (${tt.change_24h >= 0 ? "+" : "−"}${fmtRatio(Math.abs(tt.change_24h))})` : "")]);
-  return tile("Ballenas (órdenes grandes)", `${word[w4.reading]} <span class="muted">4 h</span>`, rows,
+  return tile(`<span title="órdenes a mercado ≥ US$ 100 mil">Ballenas</span>`, `${word[w4.reading]} <span class="muted">4 h</span>`, rows,
     w4.reading !== "neutral" ? " alert" : "");
 }
 
