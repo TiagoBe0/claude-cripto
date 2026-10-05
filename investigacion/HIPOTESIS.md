@@ -219,3 +219,50 @@ de 2024 a hoy (mediana +62 M, percentiles 1 y 99 de −978 M y +1.824 M) y la ta
 
 Solo si alguna pasa: se corre una vez en el holdout con las mismas reglas. Pasa si la diferencia con la base
 tiene el mismo signo favorable con al menos 10 eventos independientes. Si no, se descarta sin ajustar.
+
+---
+
+# Ronda 5 · liquidez: cuando los market makers se retiran (registrada el 2026-10-05, antes de correrla)
+
+Los bots de alta frecuencia que hacen de market makers ponen la mayor parte de las órdenes límite cerca del
+precio. No se ven directamente: se ve su efecto. Cuando se retiran, cada dólar operado mueve más el precio
+(libro fino). Lo esperable, y lo que dice la literatura, es que eso anticipe **volatilidad**; la pregunta abierta
+es si anticipa **dirección**. Nada de esta ronda se miró antes de registrarla.
+
+## Parte histórica (velas de 1 h del perpetuo, 2019 en adelante)
+
+- **Iliquidez del día (Amihud):** promedio de las 24 horas del día de |retorno logarítmico de la hora| /
+  volumen de la hora en US$ (`quote_volume`). Alta = libro fino. Percentil contra los últimos 365 días (mínimo
+  180), hoy incluido. Se usa el percentil y no el valor porque el volumen de BTC creció mucho desde 2019.
+- Reglas comunes de la ronda 1: perpetuo a 1x, decisión al cierre diario, costo 0,20 % más funding, base = la
+  misma operación todos los días, t con eventos separados al menos H días, mitades **A = 2020-2022** y
+  **B = 2023 a 2025-10-04**, holdout desde **2025-10-05** sin tocar. **H = 1, 3 y 7 días.**
+- **Pasa** (las tres hipótesis): diferencia con la base del signo esperado en las dos mitades, |t| ≥ 2 en el
+  total y al menos 20 eventos independientes. 3 hipótesis × 2 lados × 3 horizontes = 18 pruebas (~1 por azar).
+
+**L1 · Libro fino → más volatilidad (no es una regla de trading: sirve para el tamaño de la posición).**
+Variable: log(volatilidad realizada de los próximos H días / la de los últimos 7 días), con el desvío de los
+retornos horarios. Como la volatilidad se agrupa y vuelve a su media, la base no son todos los días sino los días
+del **mismo tercil de volatilidad pasada** (percentil de la volatilidad de 7 días: < 33, 33-67, > 67) y de la misma
+mitad. Iliquidez en percentil ≥ 80 → se espera diferencia **positiva**; ≤ 20 → **negativa**.
+
+**L2 · Movimiento sin liquidez, reversión.** Iliquidez en percentil ≥ 90 y BTC que bajó en el día → **largo**;
+iliquidez ≥ 90 y BTC que subió → **corto**. Idea: un movimiento hecho con poca liquidez exagera y se corrige.
+
+**L3 · Vuelven los bots.** El máximo del percentil de iliquidez de los 3 días anteriores ≥ 90 y hoy ≤ 50 (la
+liquidez volvió), con BTC que bajó en esos 3 días → **largo**; que subió → **corto**. Idea: cuando los market
+makers vuelven, el pánico (o la euforia) terminó.
+
+## Parte en vivo (se suma a la ronda P, evaluación mensual en `investigacion/propios.py`)
+
+Datos nuevos desde el 2026-10-05, capturados por minuto: profundidad del libro de Binance spot y perp a ±0,05,
+±0,1 y ±0,5 % y spread (`libro_1m.py`), y cantidad de trades y de órdenes por mercado (`whale_trades_ws.py`).
+Mismas reglas de la ronda P (velas de 1 h del perp, H = 4 y 24 horas, ≥ 30 eventos independientes, positivo en
+las dos mitades del período con datos y t ≥ 2).
+
+**P5 · Libro fino → volatilidad.** Profundidad del perp a ±0,1 % (compra + venta, promedio de los minutos de la
+hora) en percentil ≤ 10 de los últimos 7 días (mínimo 2) → |retorno| de las próximas H horas mayor que la base
+(sin costos: mide volatilidad, no dirección). Se informa también el lado opuesto (≥ 90 → menor).
+
+**P6 · Vuelven los bots, en vivo.** Profundidad de la hora en percentil ≥ 50 después de que el mínimo de las 6
+horas anteriores estuvo ≤ 10, con BTC que bajó en esas 6 horas → **largo**; que subió → **corto**.
