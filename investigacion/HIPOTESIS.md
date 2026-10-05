@@ -140,3 +140,37 @@ también BTC spot. Mitades A = 2020-01-01 → 2022 y B = 2023 → 2025-10-04. **
 ## Holdout (una sola corrida)
 
 Pasa si en el holdout el Sharpe es mayor o igual que el de comprar y mantener y la caída máxima menor.
+
+---
+
+# Ronda P · datos propios (registrada el 2026-10-05, con menos de 2 días de datos: no hay nada que mirar)
+
+Datos que casi nadie tiene armados y que el sistema junta solo desde 2026-10-03/05: órdenes grandes (≥ US$ 100 mil)
+de Binance spot, perp y Coinbase, liquidaciones de Binance y Bybit, y desbalance del libro. Se evalúan
+**cada mes** (`python -m investigacion.propios`, cron del día 1) a medida que se acumulan.
+
+## Reglas comunes
+
+- Velas de 1 h del perpetuo (`data/BTCUSDT_perp_1h.csv`). Se decide al cierre de la hora con lo conocido hasta
+  ese momento, se entra a ese precio y se sale al cierre de t + H, con **H = 4 y 24 horas**.
+- Costo 0,20 % ida y vuelta. (El funding de 4 a 24 h es chico frente a eso y no se descuenta.)
+- Base: la misma operación (largo o corto) en todas las horas con datos. t con eventos separados al menos H.
+- **Esperando datos** mientras haya menos de **30 eventos independientes** para ese lado y horizonte.
+- **Pasa** con ≥ 30 independientes, diferencia con la base positiva en la primera **y** en la segunda mitad del
+  período con datos, y t ≥ 2. Con 4 hipótesis × 2 lados × 2 horizontes = 16 pruebas, una pasa por azar cada ~20:
+  lo que pase se vuelve a confirmar con los meses siguientes antes de usarse.
+
+## Hipótesis
+
+**P1 · Flujo de ballenas, continuación.** Neto de ballenas de la hora (compras − ventas de órdenes grandes, los
+tres mercados) con z-score ≥ +2 contra las horas de los últimos 7 días (mínimo 3 días) → **largo**; ≤ −2 → **corto**.
+
+**P2 · Cascada de liquidaciones, reversión.** USD liquidado de largos en la hora en percentil ≥ 95 de los últimos
+30 días (mínimo 7) → **largo**; de cortos en percentil ≥ 95 → **corto**. Idea: la venta forzada termina y el
+precio rebota.
+
+**P3 · Desbalance del libro.** Desbalance del libro spot a ±0,5 % (snapshot de la hora) en percentil ≥ 90 de los
+últimos 30 días (mínimo 7) → **largo**; ≤ 10 → **corto**.
+
+**P4 · Orden gigante.** Al menos una orden de ≥ US$ 1 M en la hora, con el neto de esas órdenes comprador →
+**largo**; vendedor → **corto**.
