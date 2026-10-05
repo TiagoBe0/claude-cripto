@@ -107,3 +107,36 @@ estrategia mejora el Sharpe de comprar y mantener solo.
 
 Pasa si el retorno es positivo, el Sharpe > 0 y la caída máxima menor a 35 %. Si no pasa, la ronda 2 se
 descarta tal cual: no se ajusta y se vuelve a probar.
+
+---
+
+# Ronda 3 · BTC con tamaño gestionado por volatilidad (registrada el 2026-10-05, antes de correrla)
+
+**No sale de nuestros datos:** es la idea de las "carteras gestionadas por volatilidad" (Moreira y Muir, 2017):
+la volatilidad se predice mucho mejor que el retorno, y bajar la exposición cuando sube la volatilidad mejora la
+relación retorno/riesgo. No intenta ganarle a BTC en retorno sino **quedarse con su suba con menos caídas**.
+Siempre comprada: no hay señal de dirección. (Distinta de la cuenta G del paper trading viejo, que además
+usaba una señal de momentum.)
+
+## Estrategia
+
+- Perpetuo BTCUSDT, **siempre largo**. Exposición objetivo = min(50 % / volatilidad realizada, **1,5x**).
+- Volatilidad realizada: desvío de los retornos logarítmicos diarios de los últimos **30 días**, anualizado ×√365,
+  medido al cierre diario (00:00 UTC).
+- Rebalanceo una vez por día al cierre, solo si la exposición actual (que se mueve con el precio) se aparta del
+  objetivo en más de **0,10**.
+- Costos: 0,10 % por lado sobre el nocional operado y el funding real cada 8 h sobre el nocional abierto.
+  Se verifica liquidación vela por vela de 1 h (con 1,5x haría falta una caída de ~65 % en el día).
+
+## Comparación y criterios
+
+Contra **comprar y mantener el perpetuo a 1x** pagando el mismo funding (la comparación justa); se informa
+también BTC spot. Mitades A = 2020-01-01 → 2022 y B = 2023 → 2025-10-04. **Pasa** si:
+
+1. en **cada** mitad, Sharpe mayor que el de comprar y mantener **y** caída máxima menor;
+2. robustez: en la grilla ventana {14, 30, 60} días × objetivo {40, 50, 60} %, al menos 6 de 9 combinaciones con
+   Sharpe mayor que comprar y mantener en **cada** mitad (no se usa para elegir).
+
+## Holdout (una sola corrida)
+
+Pasa si en el holdout el Sharpe es mayor o igual que el de comprar y mantener y la caída máxima menor.
