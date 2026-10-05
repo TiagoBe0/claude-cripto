@@ -188,7 +188,7 @@ def main() -> None:
             ej = update_executor(data_dir, ecfg)
             pos = ej["position"]
             log.info("ejecutor (%s): %s, capital %s USDT (%+.2f %%)", "REAL" if ej["real"] else "testnet",
-                     f"{pos[qty]} BTC, stop {pos[stop_price]}" if pos else "afuera",
+                     f"{pos['qty']} BTC, stop {pos['stop_price']}" if pos else "afuera",
                      ej["equity_usdt"], ej["return_pct"])
         except Exception:
             failed += 1
