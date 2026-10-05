@@ -146,6 +146,10 @@
 
   .groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(212px, 1fr)); gap: 6px; align-items: start; }
   .group { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; min-width: 0; }
+  .help { margin-left: 4px; font-size: 10px; font-weight: 700; color: var(--text-muted); text-decoration: none;
+    border: 1px solid var(--border); border-radius: 50%; display: inline-grid; place-items: center; width: 14px; height: 14px;
+    text-transform: none; letter-spacing: 0; vertical-align: 1px; }
+  .help:hover { color: var(--text-primary); border-color: var(--text-secondary); }
   .group h2 { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; margin: 0 0 2px; }
   .tile.alert { border-top-color: var(--warning); box-shadow: inset 3px 0 0 var(--warning); padding-left: 6px; }
 
@@ -276,6 +280,7 @@
     <label class="toggle"><input type="checkbox" id="liq-toggle" checked> Mapa de liquidez</label>
     <label class="toggle" id="strat-toggle-label" hidden><input type="checkbox" id="strat-toggle" checked> Estrategia 4h</label>
     <span class="spacer"></span>
+    <a href="ayuda.html" class="muted" title="Cómo leer cada indicador y qué valores mirar">Ayuda: cómo leer el panel</a>
     <span class="muted" id="updated">cargando…</span>
     <span class="muted">Eje en UTC</span>
   </div>
@@ -1252,7 +1257,7 @@ function renderRegime(r) {
       + `<td>${verdict(c)}</td></tr>`;
   };
   const longs = r.factors.filter((f) => f.long_history), shorts = r.factors.filter((f) => !f.long_history);
-  card.innerHTML = `<h2>Lectura de régimen <span class="muted">· velas diarias, cierre del ${r.asof}</span></h2>`
+  card.innerHTML = `<h2>Lectura de régimen${helpLink("Lectura de régimen")} <span class="muted">· velas diarias, cierre del ${r.asof}</span></h2>`
     + `<p class="lead">${lead}</p>`
     + `<div class="scroll-x"><table><thead><tr><th>Factor</th><th>Hoy</th><th class="num">Valor</th><th class="num">Días así</th>`
     + `<th class="num">7 d después<br><span class="muted">media · % suba</span></th>`
@@ -1472,7 +1477,7 @@ function renderStatus(st) {
     const snapT = Math.floor(s.timestamp / 1000);
     const basis = (s.mark_price - s.index_price) / s.index_price;
     const nextF = new Date(s.next_funding_time).toLocaleTimeString("es-AR", { timeStyle: "short" });
-    const group = (title, items) => `<section class="group"><h2>${title}</h2><div class="tiles">${items.join("")}</div></section>`;
+    const group = (title, items) => `<section class="group"><h2>${title}${helpLink(title)}</h2><div class="tiles">${items.join("")}</div></section>`;
     tiles.innerHTML = [
       group("Mercado", [
         tile("Mark price (perp)", fmtPrice(s.mark_price), [["índice", fmtPrice(s.index_price)], ["basis", fmtPct(basis, 3)]]),
@@ -1653,7 +1658,7 @@ function renderDaily(m) {
             + `<td class="num${st ? " strong" : ""}">${m.major_net_pctl[i] == null ? "–" : nf(0).format(m.major_net_pctl[i])}${st ? (v >= 0 ? " ▲" : " ▼") : ""}</td>`; })()
       + `</tr>`);
   }
-  card.innerHTML = `<h2>Día a día <span class="muted">· días UTC cerrados, el más nuevo arriba</span></h2>` + mintBars(m)
+  card.innerHTML = `<h2>Día a día${helpLink("Día a día")} <span class="muted">· días UTC cerrados, el más nuevo arriba</span></h2>` + mintBars(m)
     + `<div class="scroll-x"><table><thead><tr><th>Día</th><th>Cierre</th><th>Δ precio</th><th>Market cap BTC</th><th>Δ market cap</th>`
     + `<th>Volumen 24 h</th><th>vs prom. 30 d</th><th>Emisión USDT</th><th>Emisión USDC</th><th>USDT + USDC</th>`
     + `<th title="emisión neta del día contra los 365 anteriores; ▲▼ = día fuerte">percentil</th></tr></thead><tbody>${rows.join("")}</tbody></table></div>`
@@ -1662,6 +1667,14 @@ function renderDaily(m) {
     + `alguien deposita dólares en Tether o Circle y se queman cuando los retira) junto con el volumen. Emisión = cambio de la oferta `
     + `en unidades; Tether suele emitir en bloques grandes, así que USDT puede quedar plano varios días y después saltar. Fuentes: CoinGecko (precio, market cap, volumen de todos los exchanges) y DefiLlama.</p>`;
   card.hidden = false;
+}
+
+// Link "?" a la sección del machete (ayuda.html) según el título de la columna
+const HELP = [["Mercado", "mercado"], ["Derivados", "derivados"], ["Precio y técnicos", "tecnicos"], ["Volatilidad", "volatilidad"],
+  ["Dinero en el mercado", "dinero"], ["Flujo", "flujo"], ["Día a día", "dia"], ["Lectura de régimen", "regimen"]];
+function helpLink(title) {
+  const h = HELP.find(([k]) => title.startsWith(k));
+  return h ? `<a class="help" href="ayuda.html#${h[1]}" title="Cómo leer esto">?</a>` : "";
 }
 
 // Tarjeta: etiqueta, valor grande y filas "dato — valor" (más fácil de leer que una línea corrida)

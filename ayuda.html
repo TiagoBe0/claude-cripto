@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Machete de indicadores</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-0: #f4f4f2; --surface-1: #fcfcfb; --border: #e4e3df;
+    --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #85847f;
+    --up: #2a78d6; --down: #e34948; --warning: #b07c00;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --surface-0: #111110; --surface-1: #1a1a19; --border: #2e2e2c;
+      --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #8d8c85;
+      --up: #3987e5; --down: #e66767; --warning: #e0b43a;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-0: #111110; --surface-1: #1a1a19; --border: #2e2e2c;
+    --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #8d8c85;
+    --up: #3987e5; --down: #e66767; --warning: #e0b43a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--surface-0); color: var(--text-primary);
+    font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1600px; margin: 0 auto; padding: 12px 16px 40px; display: grid; gap: 8px; }
+  main > * { min-width: 0; }
+  header { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: baseline; }
+  h1 { font-size: 18px; margin: 0; }
+  h2 { font-size: 13px; margin: 0 0 4px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-secondary); }
+  a { color: var(--up); }
+  nav { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; }
+  .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+  .card:target { outline: 2px solid var(--up); }
+  .scroll-x { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  th, td { text-align: left; vertical-align: top; padding: 3px 8px; border-top: 1px solid var(--border); }
+  th { color: var(--text-muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
+  td:first-child { font-weight: 600; white-space: nowrap; }
+  td.up { color: var(--up); } td.down { color: var(--down); } td.mid { color: var(--text-secondary); }
+  td.res { color: var(--text-muted); }
+  td.res b { color: var(--text-secondary); font-weight: 600; }
+  col.c-ind { width: 12%; } col.c-que { width: 20%; } col.c-up, col.c-down { width: 16%; } col.c-mid { width: 12%; } col.c-res { width: 24%; }
+  .lead { margin: 0; max-width: 1100px; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 8px; }
+  .grid2 .card p { margin: 2px 0 0; }
+  .tag { display: inline-block; font-size: 11px; font-weight: 600; padding: 0 6px; border-radius: 4px; }
+  .tag.up { color: var(--up); background: color-mix(in srgb, var(--up) 12%, transparent); }
+  .tag.down { color: var(--down); background: color-mix(in srgb, var(--down) 12%, transparent); }
+  .tag.mid { color: var(--text-secondary); background: color-mix(in srgb, var(--text-muted) 15%, transparent); }
+  .tag.warn { color: var(--warning); background: color-mix(in srgb, var(--warning) 14%, transparent); }
+  ul { margin: 2px 0 0; padding-left: 18px; }
+  li { margin: 1px 0; }
+  .muted { color: var(--text-muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Machete de indicadores</h1>
+    <a href="./">← volver al panel</a>
+    <span class="muted">Umbrales tomados del código del panel y de investigacion/RESULTADOS.md · 2026-10-05</span>
+  </header>
+
+  <section class="card">
+    <p class="lead"><b>Lo primero:</b> en 5 rondas de investigación con reglas fijadas de antemano, <b>ningún indicador solo
+    anticipó la dirección de BTC</b> mejor que el azar después de costos. Los valores de abajo son la lectura
+    <i>convencional</i> de cada indicador; la última columna dice qué encontramos nosotros. Úsenlos para entender el
+    estado del mercado y el riesgo (cuánto se puede mover, quién está amontonado), no como órdenes de compra o venta.</p>
+    <ul>
+      <li><span class="tag up">▲ alcista</span> <span class="tag down">▼ bajista</span> siguen la polaridad del panel: azul sube, rojo baja.</li>
+      <li><b>Contrario</b> = un extremo se lee al revés: cuando todos están de un lado, el riesgo es que el precio vaya al otro (barridas de stops y liquidaciones).</li>
+      <li><b>Percentil</b> = posición del valor de hoy contra el último año (0 = el más bajo, 100 = el más alto). Se usa porque el mercado cambia de tamaño con los años.</li>
+      <li>Una señal sola vale poco; varias que apuntan al mismo lado (ver <a href="#escenarios">escenarios</a>) valen algo más, pero tampoco están validadas.</li>
+    </ul>
+    <nav style="margin-top:6px">
+      <a href="#franja">Franja de arriba</a><a href="#mercado">Mercado</a><a href="#derivados">Derivados</a>
+      <a href="#tecnicos">Precio y técnicos</a><a href="#volatilidad">Volatilidad y OI</a><a href="#dinero">Dinero en el mercado</a>
+      <a href="#flujo">Flujo y señales</a><a href="#dia">Día a día</a><a href="#regimen">Régimen</a>
+      <a href="#grafico">Gráfico</a><a href="#escenarios">Escenarios</a><a href="#investigacion">Qué probamos</a>
+    </nav>
+  </section>
+
+  <section class="card" id="franja">
+    <h2>Franja de arriba</h2>
+    <p class="lead">Precio en vivo (WebSocket de Binance), variación, máximo, mínimo y volumen de 24 h, y un resumen de
+    cinco lecturas que se explican en sus columnas: ballenas 4 h, modelo ML, funding, Fear &amp; Greed y RSI del
+    timeframe elegido. El punto verde dice que el precio llega en vivo; amarillo, que se muestra el último dato del cron.</p>
+  </section>
+
+  <section class="card" id="mercado">
+    <h2>Mercado · foto del libro (snapshot horario)</h2>
+    <div class="scroll-x"><table>
+      <colgroup><col class="c-ind"><col class="c-que"><col class="c-up"><col class="c-mid"><col class="c-down"><col class="c-res"></colgroup>
+      <thead><tr><th>Indicador</th><th>Qué mide</th><th>▲ Alcista</th><th>● Neutral</th><th>▼ Bajista</th><th>Ojo · qué encontramos</th></tr></thead>
+      <tbody>
+        <tr><td>Mark price · basis</td><td>Precio del perpetuo contra el índice spot. Basis = (mark − índice) / índice.</td>
+          <td class="up">Basis negativo fuerte (&lt; −0,1 %): los cortos pagan por estar, pánico. Contrario.</td>
+          <td class="mid">Entre −0,05 y +0,05 %.</td>
+          <td class="down">Basis &gt; +0,1 % sostenido: demanda apalancada de largos, euforia. Contrario.</td>
+          <td class="res">Es el motor del funding. <b>H2 (premium extremo)</b> no mostró nada en la ronda 1.</td></tr>
+        <tr><td>Spread spot</td><td>Distancia entre la mejor compra y la mejor venta, en puntos básicos.</td>
+          <td class="mid" colspan="3">No da dirección. Normal en BTCUSDT: ~0,001 bps (un centavo). Si se abre a &gt; 0,1 bps,
+            los market makers se retiraron: se viene movimiento brusco y las órdenes a mercado pagan caro.</td>
+          <td class="res">Medida directa de los bots de alta frecuencia. Se registra por minuto desde oct-2026 (<b>P5/P6</b>, pendiente).</td></tr>
+        <tr><td>Libro spot ±0,5 %</td><td>Desbalance = (compras − ventas) / total, en US$ de órdenes límite hasta 0,5 % del precio.</td>
+          <td class="up">&gt; +20 %: más órdenes de compra esperando debajo (soporte).</td>
+          <td class="mid">Entre −20 y +20 %.</td>
+          <td class="down">&lt; −20 %: más órdenes de venta encima (resistencia).</td>
+          <td class="res">Las órdenes límite se pueden retirar en un segundo (spoofing). <b>P3</b> lo evalúa con datos propios, pendiente.</td></tr>
+        <tr><td>Libro perp ±0,1 %</td><td>Lo mismo en el perpetuo, más cerca del precio (donde operan los bots).</td>
+          <td class="up">&gt; +20 %.</td><td class="mid">Entre −20 y +20 %.</td><td class="down">&lt; −20 %.</td>
+          <td class="res">Más ruidoso que el spot: cambia de signo en minutos. Mirar el monto total: si cae mucho, el libro está fino.</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section class="card" id="derivados">
+    <h2>Derivados</h2>
+    <div class="scroll-x"><table>
+      <colgroup><col class="c-ind"><col class="c-que"><col class="c-up"><col class="c-mid"><col class="c-down"><col class="c-res"></colgroup>
+      <thead><tr><th>Indicador</th><th>Qué mide</th><th>▲ Alcista</th><th>● Neutral</th><th>▼ Bajista</th><th>Ojo · qué encontramos</th></tr></thead>
+      <tbody>
+        <tr><td>Funding</td><td>Lo que paga un lado al otro cada 8 h para atar el perpetuo al spot. Positivo = pagan los largos.
+          Se muestra por período y anualizado (× 3 × 365).</td>
+          <td class="up">Negativo (los cortos pagan): posicionamiento corto amontonado, riesgo de short squeeze. Contrario.</td>
+          <td class="mid">0 a 15 % anual (Binance cobra 0,01 % por 8 h ≈ 11 % anual por defecto).</td>
+          <td class="down">&gt; 15 % anual, y sobre todo &gt; 30 %: largos apalancados pagando caro, vulnerables a una barrida. Contrario.</td>
+          <td class="res"><b>H1</b>: funding de 3 días en el 10 % más bajo del año → largo dio +1 a +2 % sobre la base, en las dos mitades,
+            pero sin significancia (t 1,0-1,7). Pista débil. Además: para estar comprado mucho tiempo, el funding hace que el spot le gane al perpetuo.</td></tr>
+        <tr><td>Open interest</td><td>Contratos abiertos del perpetuo (BTC y US$): cuánto apalancamiento hay en juego.</td>
+          <td class="up">OI sube y el precio sube: entra plata nueva a favor de la tendencia. OI sube y el precio baja fuerte: cortos nuevos, combustible para un squeeze.</td>
+          <td class="mid">OI estable (±5 % en 7 días).</td>
+          <td class="down">OI sube rápido con funding alto: largos apalancados persiguiendo. OI cae con el precio: se desarma la posición (liquidaciones, cierre).</td>
+          <td class="res">El OI no tiene dirección: hay un corto por cada largo. Se lee junto con el precio y el funding. <b>H3 (squeeze)</b>: no significativo.</td></tr>
+        <tr><td>Liquidaciones 24 h</td><td>Posiciones cerradas a la fuerza (Binance + Bybit, capturadas en vivo). Largos = ventas forzadas.</td>
+          <td class="up">Liquidación grande de largos después de una caída: puede marcar el final de la venta forzada (capitulación).</td>
+          <td class="mid">Parejas, o chicas contra los días anteriores.</td>
+          <td class="down">Liquidación grande de cortos después de una suba: el squeeze se agotó y puede corregir.</td>
+          <td class="res">Binance manda como mucho una por segundo: en cascadas subestima. Comparar contra los días anteriores, no contra un número fijo. <b>P2</b> (reversión tras cascada), pendiente.</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section class="card" id="tecnicos">
+    <h2>Precio y técnicos · cambian con el timeframe elegido (1h / 4h / 1d)</h2>
+    <div class="scroll-x"><table>
+      <colgroup><col class="c-ind"><col class="c-que"><col class="c-up"><col class="c-mid"><col class="c-down"><col class="c-res"></colgroup>
+      <thead><tr><th>Indicador</th><th>Qué mide</th><th>▲ Alcista</th><th>● Neutral</th><th>▼ Bajista</th><th>Ojo · qué encontramos</th></tr></thead>
+      <tbody>
+        <tr><td>Variación</td><td>Cambio del precio en 1 h, 4 h, 24 h, 7 d y 30 d. Con velas más largas que la ventana se muestra «–».</td>
+          <td class="up">Subas en todos los plazos (tendencia alineada).</td><td class="mid">Plazos que se contradicen.</td>
+          <td class="down">Bajas en todos los plazos.</td>
+          <td class="res">Momentum de 30 días (régimen): no concluyente. El momentum 30/90/180 d (cuenta G) fue bueno desde 2023 y malo antes.</td></tr>
+        <tr><td>SMA 50 / 200</td><td>Medias simples de 50 y 200 velas. En diario, la SMA 200 es la línea clásica de mercado alcista o bajista.</td>
+          <td class="up">Precio sobre la SMA 200 y SMA 50 sobre la 200 (cruce dorado).</td>
+          <td class="mid">Precio pegado a la SMA 200 (±3 %): zona de decisión.</td>
+          <td class="down">Precio debajo de la SMA 200 y SMA 50 debajo (cruce de la muerte).</td>
+          <td class="res">Los cruces no mostraron ventaja en el estudio de eventos (por eso los avisos dicen «mirá el gráfico»). Tendencia en el régimen: no concluyente.</td></tr>
+        <tr><td>RSI 14</td><td>Fuerza de las subas contra las bajas recientes, de 0 a 100.</td>
+          <td class="up">En diario, &gt; 65 sostenido = fuerza que tiende a seguir. &lt; 30 = sobreventa (rebote posible).</td>
+          <td class="mid">30 a 70.</td>
+          <td class="down">&gt; 70 = sobrecompra en 1h/4h (el panel lo marca en rojo); en tendencias fuertes puede quedarse ahí semanas.</td>
+          <td class="res">En la lectura de régimen del 2026-10-04, lo único que <b>se sostenía</b>: RSI diario &gt; 65 → +7,8 % a 30 días sobre la base. Como regla de trading (<b>H6</b>), no llegó a significancia. Descriptivo.</td></tr>
+        <tr><td>MACD</td><td>Diferencia entre las medias exponenciales de 12 y 26 velas, y su señal (9). El histograma es MACD − señal.</td>
+          <td class="up">Histograma positivo y creciendo; MACD cruza la señal hacia arriba.</td>
+          <td class="mid">Histograma cerca de 0.</td>
+          <td class="down">Histograma negativo y creciendo en valor absoluto.</td>
+          <td class="res">La «confluencia» EMA 200 + MACD + RSI perdió −15 % anual fuera de muestra. El MACD solo no se probó como regla.</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section class="card" id="volatilidad">
+    <h2>Volatilidad y OI</h2>
+    <div class="scroll-x"><table>
+      <colgroup><col class="c-ind"><col class="c-que"><col class="c-up"><col class="c-mid"><col class="c-down"><col class="c-res"></colgroup>
+      <thead><tr><th>Indicador</th><th>Qué mide</th><th>▲ Alcista</th><th>● Neutral</th><th>▼ Bajista</th><th>Ojo · qué encontramos</th></tr></thead>
+      <tbody>
+        <tr><td>DVOL vs realizada</td><td>DVOL = volatilidad implícita a 30 días de las opciones de Deribit (lo que el mercado espera). Realizada = la que hubo en 30 días.</td>
+          <td class="mid" colspan="3">No da dirección: dice cuánto se espera que se mueva. DVOL muy por encima de la realizada (&gt; +10 pts): el mercado paga protección y espera un
+            movimiento. DVOL debajo de la realizada: complacencia. Rango habitual del DVOL: 40-60 %; &lt; 35 es calma inusual, que suele terminar en un movimiento grande.</td>
+          <td class="res">Volatilidad alta en el régimen: no concluyente para dirección. Sirve para el tamaño de la posición: con más volatilidad, posición más chica.</td></tr>
+        <tr><td>Fear &amp; Greed</td><td>Índice de sentimiento de alternative.me (0 a 100), diario.</td>
+          <td class="up">≤ 25 miedo extremo: contrario, suele estar cerca de pisos.</td>
+          <td class="mid">45-55 neutral (25-45 miedo, 55-75 codicia).</td>
+          <td class="down">≥ 75 codicia extrema: contrario, riesgo de corrección.</td>
+          <td class="res">En el régimen: no concluyente. Es lento (diario) y en mercados alcistas puede quedarse en codicia meses.</td></tr>
+        <tr><td>OI (US$) 24 h · 7 d</td><td>Cambio porcentual del open interest.</td>
+          <td class="up">Sube con el precio, a ritmo moderado.</td><td class="mid">±5 % en 7 días.</td>
+          <td class="down">Sube &gt; 5 % en 7 días con funding alto (apalancamiento persiguiendo), o cae fuerte con el precio.</td>
+          <td class="res">OI 7 d en el régimen: no concluyente.</td></tr>
+        <tr><td>L/S top traders</td><td>Ratio largo/corto de las posiciones de las cuentas grandes de Binance. &gt; 1 = más largos.</td>
+          <td class="up">Sube mientras el de todas las cuentas baja (las grandes compran lo que venden los minoristas).</td>
+          <td class="mid">Se mueve junto con el de todas las cuentas.</td>
+          <td class="down">Baja mientras el de todas las cuentas sube.</td>
+          <td class="res" rowspan="2"><b>H4</b> (minoristas en un extremo y grandes del otro lado): positivo en las dos mitades a 3 y 7 días, sin significancia. Combinado
+            con funding (<b>ronda 2</b>): no pagó los costos. La pista de «ir contra la multitud» es la más repetida, pero débil.</td></tr>
+        <tr><td>L/S cuentas (todas)</td><td>Ratio de cuentas con posición larga contra corta (mayoría minorista).</td>
+          <td class="up">En el 10 % más bajo del año (minoristas muy cortos): contrario.</td>
+          <td class="mid">Entre los percentiles 10 y 90.</td>
+          <td class="down">En el 10 % más alto (minoristas muy largos): contrario.</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section class="card" id="dinero">
+    <h2>Dinero en el mercado · diario (CoinGecko y DefiLlama)</h2>
+    <div class="scroll-x"><table>
+      <colgroup><col class="c-ind"><col class="c-que"><col class="c-up"><col class="c-mid"><col class="c-down"><col class="c-res"></colgroup>
+      <thead><tr><th>Indicador</th><th>Qué mide</th><th>▲ Alcista</th><th>● Neutral</th><th>▼ Bajista</th><th>Ojo · qué encontramos</th></tr></thead>
+      <tbody>
+        <tr><td>Market cap BTC</td><td>Precio × BTC en circulación. Cambio a 1, 7 y 30 días.</td>
+          <td class="mid" colspan="3">Es la valuación, <b>no plata que entra</b>: con un libro fino, poca plata mueve mucho el precio y el market cap.
+            Se mueve igual que el precio (la oferta casi no cambia).</td>
+          <td class="res">Contexto, no señal.</td></tr>
+        <tr><td>Volumen 24 h</td><td>Volumen de BTC en todos los exchanges (CoinGecko) y contra su promedio de 30 días.</td>
+          <td class="up">&gt; 1,5× el promedio con suba: la suba tiene participación (más creíble).</td>
+          <td class="mid">0,7× a 1,5×. Fines de semana suelen dar 0,5-0,7×.</td>
+          <td class="down">&gt; 1,5× con baja: venta con participación. Subas con volumen &lt; 0,7×: poco convencidas.</td>
+          <td class="res">El volumen confirma o no un movimiento; no lo anticipa. En la ronda 5 el poco volumen anticipó días tranquilos, no movimientos.</td></tr>
+        <tr><td>Emisión de stablecoins</td><td>USDT + USDC creados − quemados en el día (en unidades). Se crean cuando alguien deposita dólares en Tether o Circle.</td>
+          <td class="up"><b>Emisión fuerte</b> (percentil ≥ 95 del año), o emisión de 30 días alta: dólares nuevos disponibles.</td>
+          <td class="mid">Percentil 5 a 95. Tether emite en bloques: USDT puede quedar plano varios días.</td>
+          <td class="down"><b>Quema fuerte</b> (percentil ≤ 5): salen dólares del ecosistema.</td>
+          <td class="res"><b>Ronda 4: no anticipa el precio</b> (0 de 18). El día de emisión fuerte no da ventaja. La emisión de 30 días alta dio algo más que la base en las dos
+            mitades (+1,4 % a 14 días, t 0,9): acompaña a los mercados alcistas más que adelantarlos.</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section class="card" id="flujo">
+    <h2>Flujo y señales</h2>
+    <div class="scroll-x"><table>
+      <colgroup><col class="c-ind"><col class="c-que"><col class="c-up"><col class="c-mid"><col class="c-down"><col class="c-res"></colgroup>
+      <thead><tr><th>Indicador</th><th>Qué mide</th><th>▲ Alcista</th><th>● Neutral</th><th>▼ Bajista</th><th>Ojo · qué encontramos</th></tr></thead>
+      <tbody>
+        <tr><td>Ballenas</td><td>Órdenes a mercado ≥ US$ 100 mil en Binance spot, perp y Coinbase. Neto = compras − ventas en 1, 4 y 24 h.</td>
+          <td class="up"><b>Comprando</b>: (compra − venta) / total &gt; +15 %.</td>
+          <td class="mid">Entre −15 y +15 %.</td>
+          <td class="down"><b>Vendiendo</b>: &lt; −15 %.</td>
+          <td class="res">Una orden grande puede ser una cobertura o una liquidación, no una apuesta. No ve compras en pedacitos (TWAP).
+            <b>P1 y P4</b> lo evalúan con datos propios cada mes, pendiente.</td></tr>
+        <tr><td>Top traders L/S</td><td>El mismo ratio de la columna de volatilidad, con su cambio en 24 h.</td>
+          <td class="up">Sube.</td><td class="mid">Sin cambio.</td><td class="down">Baja.</td>
+          <td class="res">Ver H4 arriba.</td></tr>
+        <tr><td>Modelo ML 4 h</td><td>LightGBM con ~50 variables. P(movimiento) = probabilidad de que BTC se mueva más de 0,5 % en 4 h, y su percentil en 90 días.</td>
+          <td class="mid" colspan="3">No da dirección. <b>Movimiento probable</b> (percentil ≥ 80, alerta amarilla): se espera un movimiento grande, hacia cualquier lado.
+            <b>Calma probable</b> (≤ 20). Normal en el medio. P(sube) y P(baja) se muestran, pero son casi azar.</td>
+          <td class="res">Backtest 2025-2026: predice <i>si</i> habrá movimiento (AUC 0,70) pero no hacia dónde (AUC 0,51 = moneda al aire). Usarlo para el tamaño de la posición o para no entrar, no para el lado.</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section class="card" id="dia">
+    <h2>Día a día y barras de emisión</h2>
+    <p class="lead">Una fila por día UTC cerrado, el más nuevo arriba: cierre, Δ precio, market cap, volumen contra su promedio
+    y emisión de USDT, USDC y la suma con su percentil (▲ / ▼ y negrita = día fuerte). Las barras muestran la emisión neta de 90
+    días: arriba azul se crearon, abajo rojo se quemaron, color pleno = día fuerte. Para leer: buscar <b>rachas</b> (varios días
+    seguidos creando o quemando) y si el volumen acompaña, más que un día aislado.</p>
+  </section>
+
+  <section class="card" id="regimen">
+    <h2>Lectura de régimen (velas diarias desde 2017)</h2>
+    <p class="lead">Para cada factor (tendencia, momentum, RSI, volatilidad, distancia al máximo; y desde 2024 Fear &amp; Greed, funding y OI),
+    clasifica el día de hoy y muestra qué hizo BTC 7 y 30 días después en los días con el mismo estado, contra todos los días (la base).</p>
+    <ul>
+      <li><b>30 d vs base</b>: lo que importa. BTC subió tanto desde 2017 que casi cualquier estado «gana»; la pregunta es si gana más que un día cualquiera.</li>
+      <li><b>vs base por período</b> (2018-22 / 2023-hoy): si la diferencia cambia de signo entre períodos, no es confiable.</li>
+      <li><span class="tag up">✓ se sostiene</span> = mismo signo en los dos períodos y |t| ≥ 2. «No concluyente» = puede ser ruido. Los factores de historia corta valen menos.</li>
+      <li>Es una descripción del pasado. Con 8 factores, alguno «se sostiene» por azar de vez en cuando.</li>
+    </ul>
+  </section>
+
+  <section class="card" id="grafico">
+    <h2>Gráfico</h2>
+    <div class="grid2">
+      <div><b>Mapa de liquidez</b> (sobre el precio)
+        <ul>
+          <li><span class="tag down">rojo</span> / <span class="tag up">azul</span>: liquidaciones <b>estimadas</b> de largos (debajo) y cortos (encima) por tramo de 0,5 %.
+            Es un modelo: supone apalancamientos de 10 a 100x sobre cada suba del OI. El precio suele ir a buscar los tramos grandes (barridas), pero no siempre.</li>
+          <li>Líneas punteadas: máximos y mínimos todavía no barridos, donde se acumulan stops.</li>
+          <li>Líneas naranjas: el muro de órdenes más grande de cada lado (Binance y Coinbase), si es ≥ 3 veces un tramo típico. Pueden desaparecer.</li>
+        </ul></div>
+      <div><b>Perfil de volumen</b> y paneles
+        <ul>
+          <li>Perfil de volumen: cuánto se operó a cada precio. Los niveles con mucho volumen suelen actuar de soporte o resistencia; los huecos se cruzan rápido.</li>
+          <li>Paneles: volumen, RSI, MACD, funding, OI, long/short, ballenas, DVOL contra la volatilidad realizada y Fear &amp; Greed, con los mismos criterios de arriba.
+            «Sobre el precio» los superpone al gráfico de velas.</li>
+          <li><b>Estado de las series</b>: si alguna está atrasada, el dato de su columna es viejo.</li>
+        </ul></div>
+    </div>
+  </section>
+
+  <section class="card" id="escenarios">
+    <h2>Escenarios: cuándo varias lecturas apuntan al mismo lado</h2>
+    <p class="muted" style="margin:0 0 4px">Combinaciones clásicas. No están validadas como reglas (la ronda 2, que combinaba posicionamiento contrario, no pagó los costos):
+    sirven para ponerle nombre a lo que muestra el panel.</p>
+    <div class="grid2">
+      <div class="card"><span class="tag down">Euforia apalancada · riesgo bajista</span>
+        <p>Funding &gt; 30 % anual · OI subiendo &gt; 5 % en 7 días · L/S de todas las cuentas en extremo largo · Fear &amp; Greed ≥ 75 · basis &gt; +0,1 %.
+        Muchos largos apalancados: una baja chica puede barrer stops y liquidaciones en cascada (tramos rojos grandes debajo del precio en el mapa).</p></div>
+      <div class="card"><span class="tag up">Capitulación · posible piso</span>
+        <p>Liquidaciones de largos grandes · funding negativo · Fear &amp; Greed ≤ 25 · volumen &gt; 1,5× · OI cayendo.
+        La venta forzada se termina; conviene esperar que vuelva la liquidez (spread normal, libro que se recupera) antes de leerlo como piso.</p></div>
+      <div class="card"><span class="tag warn">Mercado frágil · sin dirección</span>
+        <p>Spread abierto · libro fino · modelo ML en «movimiento probable» · DVOL muy por encima de la realizada.
+        Se espera un movimiento grande sin saber el lado: posición más chica, evitar órdenes a mercado grandes, stops más lejos.</p></div>
+      <div class="card"><span class="tag up">Tendencia sana</span>
+        <p>Precio sobre la SMA 200 diaria · RSI diario 55-70 · funding 0-15 % anual · OI subiendo despacio · volumen acompañando las subas ·
+        emisión de stablecoins positiva en 30 días. Suba con apalancamiento moderado y plata nueva.</p></div>
+      <div class="card"><span class="tag mid">Calma</span>
+        <p>Modelo ML en «calma probable» · DVOL &lt; 40 · volumen &lt; 0,7× · spread mínimo. Poco movimiento esperado. Las calmas largas suelen terminar
+        en un movimiento brusco.</p></div>
+    </div>
+  </section>
+
+  <section class="card" id="investigacion">
+    <h2>Qué probamos (detalle en investigacion/RESULTADOS.md)</h2>
+    <div class="scroll-x"><table>
+      <thead><tr><th>Ronda</th><th>Qué</th><th>Resultado</th></tr></thead>
+      <tbody>
+        <tr><td>Estrategia 4h</td><td>Ruptura de Donchian + EMA 1200 + stop ATR, spot</td><td class="res">15 % anual desde 2023 contra 55 % de comprar y mantener; cae mucho menos (−25 %). Pausada.</td></tr>
+        <tr><td>Perpetuo</td><td>Donchian y momentum con apalancamiento</td><td class="res">Ninguna le gana a comprar y mantener en los dos períodos. El funding castiga al largo permanente.</td></tr>
+        <tr><td>Ronda 1</td><td>Funding, premium, OI, retail vs top traders, absorción, RSI</td><td class="res">2 de 33 pruebas (≈ azar). Pista débil de posicionamiento contrario.</td></tr>
+        <tr><td>Ronda 2</td><td>Posicionamiento contrario combinado</td><td class="res">Sharpe 0,08 y 0,28: no paga costos.</td></tr>
+        <tr><td>Ronda 3</td><td>Tamaño por volatilidad en el perpetuo</td><td class="res">No mejora a comprar y mantener; el spot le gana al perpetuo por el funding.</td></tr>
+        <tr><td>Ronda 4</td><td>Emisión de stablecoins</td><td class="res">0 de 18. Acompaña al mercado, no lo anticipa.</td></tr>
+        <tr><td>Ronda 5</td><td>Liquidez (Amihud) y market makers</td><td class="res">0 de 18 con velas. La parte con el libro por minuto (P5, P6) se evalúa cada mes.</td></tr>
+        <tr><td>Modelo ML</td><td>LightGBM, 4 h</td><td class="res">Predice movimiento (AUC 0,70), no dirección (0,51).</td></tr>
+        <tr><td>Ronda P</td><td>Ballenas, liquidaciones, libro, órdenes gigantes (datos propios)</td><td class="res">Esperando datos: evaluación automática el día 1 de cada mes.</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+</main>
+</body>
+</html>
