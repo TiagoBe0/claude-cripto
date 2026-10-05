@@ -33,7 +33,7 @@ Se configura en `config.json`:
 - `export_json`: además del CSV, escribe un `.json` con la serie completa
 - `indicators`: calcula indicadores técnicos después de cada descarga
 - `futures`: `symbol` del perpetuo y qué series bajar (`klines`, `premium_index`, `funding_rate`, `metrics_5m`, `snapshot`)
-- `external`: `fear_greed`, `deribit_dvol`
+- `external`: `fear_greed`, `deribit_dvol`, `coingecko_market`, `stablecoins`
 
 Salida: `data/BTCUSDT_1h.csv` (+ `.json`), columnas
 `timestamp` (ms UTC, apertura de la vela), `datetime_utc`, `open`, `high`, `low`, `close`, `volume`.
@@ -73,6 +73,8 @@ Validado contra la librería `ta`: diferencias del orden de 1e-15.
 | `BTCUSDT_snapshot.csv` | 1 por corrida | `mark_price`, `index_price`, `est_funding_rate` (del período en curso), `next_funding_time`, `open_interest` en vivo, `spot_bid/ask`, `spot_spread_bps`, profundidad en USD a ±0,5% (spot) y ±0,1% (perp) con su desbalance `(bids-asks)/(bids+asks)` |
 | `fear_greed.csv` | diaria | `value` 0–100, `classification` |
 | `BTC_dvol_1h.csv` | 1 h | OHLC del DVOL (volatilidad implícita anualizada a 30 días, en %) |
+| `BTC_market_1d.csv` | diaria | CoinGecko: `price_usd`, `market_cap_usd` y `volume_24h_usd` de BTC (todos los exchanges). La API gratis da 365 días hacia atrás |
+| `stablecoins_1d.csv` | diaria | DefiLlama: `stablecoins_usd`, total de stablecoins atadas al dólar |
 
 Notas:
 
@@ -134,6 +136,9 @@ Además del gráfico y las tarjetas, `build_dashboard.py` arma:
   volatilidad y distancia al máximo (desde 2017) y en Fear & Greed, funding y open interest (desde 2024), con el
   retorno 7 y 30 días después en días con el mismo estado contra la base, y si la diferencia se sostiene en
   2018-2022 y 2023-hoy. A mano: `.venv/bin/python estrategia/regimen.py`.
+- **Dinero en el mercado** (`market.json`): market cap y volumen 24 h de BTC y total de stablecoins, con
+  cambios a 1, 7 y 30 días y una tabla día a día de las últimas 2 semanas. El cambio de market cap es
+  precio × oferta (no es plata que entra); la emisión de stablecoins es la mejor aproximación gratis.
 - **Modelo ML**: tarjeta con `data/ml/prediction.json` (P de movimiento, percentil, evaluación en vivo).
 - **Laboratorio de backtest** (`lab_4h.json`, se baja al abrirlo): la estrategia reescrita en JavaScript (da los
   mismos números que Python), con parámetros a mano y un mapa de sensibilidad del Sharpe por Donchian × stop

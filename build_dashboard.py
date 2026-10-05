@@ -18,6 +18,8 @@ Escribe en <data_dir>/dashboard/:
                                  (los charts llevan además EMA 1200, canal Donchian y stop)
 - lab_4h.json                    velas spot 4h desde 2017 para el laboratorio de backtest del
                                  panel (se baja solo al abrirlo)
+- market.json                    diario: market cap y volumen 24 h de BTC (CoinGecko) y total de
+                                 stablecoins (DefiLlama), con sus cambios día a día
 - regime.json                    lectura de régimen (estrategia/regimen.py): estado de hoy por
                                  factor y qué pasó 7 y 30 días después en días parecidos
 
@@ -66,6 +68,8 @@ SERIES_PERIOD = [
     ("_1d", 86400),
     ("fear_greed", 86400),
 ]
+# Series de fuera de Binance que también se vigilan en "Estado de las series"
+EXTERNAL_SERIES = ("fear_greed", "BTC_dvol_1h", "BTC_market_1d", "stablecoins_1d")
 
 
 def _read(path: Path, cols: list[str]) -> pd.DataFrame:
@@ -309,7 +313,7 @@ def status_data(data_dir: Path) -> dict:
     for csv_path in sorted(data_dir.glob("*.csv")):
         if csv_path.stem.endswith("_indicators"):
             continue  # misma frescura que sus velas
-        if not (csv_path.stem.startswith(SYMBOL) or csv_path.stem in ("fear_greed", "BTC_dvol_1h")):
+        if not (csv_path.stem.startswith(SYMBOL) or csv_path.stem in EXTERNAL_SERIES):
             continue  # otros símbolos: restos de configuraciones viejas, ya no se actualizan
         period = next((p for suffix, p in SERIES_PERIOD if suffix in csv_path.stem), None)
         last = last_timestamp(csv_path)
@@ -374,6 +378,34 @@ def liquidity_data(data_dir: Path) -> dict:
     return out
 
 
+MARKET_DAYS = 400  # lo que viaja al navegador; la API gratis de CoinGecko da 365 días
+
+
+def market_data(data_dir: Path) -> dict | None:
+    """Series diarias para ver si entra o sale dinero: market cap, volumen y stablecoins.
+
+    Cada fila es un día cerrado (timestamp = apertura del día, como las velas de 1d).
+    """
+    mpath, spath = data_dir / "BTC_market_1d.csv", data_dir / "stablecoins_1d.csv"
+    if not mpath.exists() and not spath.exists():
+        return None
+    parts = []
+    if mpath.exists():
+        parts.append(_read(mpath, ["price_usd", "market_cap_usd", "volume_24h_usd"]))
+    if spath.exists():
+        parts.append(_read(spath, ["stablecoins_usd"]))
+    df = pd.concat(parts, axis=1).sort_index()
+    for col in ("price_usd", "market_cap_usd", "volume_24h_usd", "stablecoins_usd"):
+        if col not in df:
+            df[col] = np.nan
+    # promedio de 30 días del volumen, para decir si un día movió más o menos que lo normal
+    df["volume_avg_30d"] = df.volume_24h_usd.rolling(30, min_periods=20).mean()
+    df = df.tail(MARKET_DAYS)
+    return {"generated": int(time.time()),
+            **_columns(df, {"price_usd": 2, "market_cap_usd": 0, "volume_24h_usd": 0,
+                            "volume_avg_30d": 0, "stablecoins_usd": 0})}
+
+
 def _write(dest: Path, obj: dict) -> None:
     tmp = dest.with_suffix(".tmp")
     tmp.write_text(json.dumps(obj, separators=(",", ":"), allow_nan=False))
@@ -411,6 +443,9 @@ def build(data_dir: Path) -> Path:
         _write(out_dir / "regime.json", regimen.regime(data_dir))
     except (OSError, KeyError, ValueError) as e:
         print(f"régimen: {type(e).__name__}: {e}")
+    market = market_data(data_dir)
+    if market is not None:
+        _write(out_dir / "market.json", market)
     _write(out_dir / "status.json", status_data(data_dir))
     _write(out_dir / "liquidity.json", liquidity_data(data_dir))
     return out_dir

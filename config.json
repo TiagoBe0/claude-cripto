@@ -46,7 +46,9 @@
   },
   "external": {
     "fear_greed": true,
-    "deribit_dvol": true
+    "deribit_dvol": true,
+    "coingecko_market": true,
+    "stablecoins": true
   },
   "pausado": {
     "motivo": "Estrategias Donchian/momentum descartadas el 2026-10-05: no le ganan a comprar y mantener desde 2023. Para reactivar, volver a poner estas claves en la raíz.",

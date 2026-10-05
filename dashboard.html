@@ -88,6 +88,7 @@
   }
 
   * { box-sizing: border-box; }
+  main > * { min-width: 0; }  /* que una tabla ancha haga scroll dentro de su tarjeta, no en la página */
   [hidden] { display: none !important; }  /* que ningún display de clase le gane a hidden */
   body {
     margin: 0;
@@ -143,8 +144,8 @@
   .verdict .v.up { color: var(--up); } .verdict .v.down { color: var(--down); }
   .verdict .s { font-size: 12px; color: var(--text-muted); }
 
-  .groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px; align-items: start; }
-  .group { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
+  .groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(212px, 1fr)); gap: 6px; align-items: start; }
+  .group { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; min-width: 0; }
   .group h2 { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; margin: 0 0 2px; }
   .tile.alert { border-top-color: var(--warning); box-shadow: inset 3px 0 0 var(--warning); padding-left: 6px; }
 
@@ -192,6 +193,12 @@
   .scroll-x { overflow-x: auto; }
   .pos { color: var(--up); } .neg { color: var(--down); }
   @media (max-width: 900px) { .perf-grid { grid-template-columns: 1fr; } }
+  .daily { padding: 6px 10px; }
+  .daily h2 { font-size: 13px; margin: 0 0 2px; font-weight: 600; }
+  .daily table { width: auto; }
+  .daily th, .daily td { padding: 2px 10px; font-size: 12px; white-space: nowrap; }
+  .daily th { text-align: right; } .daily th:first-child { text-align: left; }
+  .daily .note { margin: 4px 0 0; color: var(--text-muted); font-size: 11px; }
   .regime { padding: 8px 10px; display: grid; gap: 4px; }
   .regime th, .regime td { padding: 2px 8px; font-size: 12px; }
   .regime h2 { font-size: 13px; margin: 0; font-weight: 600; }
@@ -247,6 +254,8 @@
   </section>
 
   <div class="groups" id="tiles" aria-label="Último snapshot"></div>
+
+  <section class="card daily" id="daily" aria-label="Día a día: market cap, volumen y stablecoins" hidden></section>
 
   <section class="card regime" id="regime" aria-label="Lectura de régimen" hidden></section>
 
@@ -353,6 +362,13 @@ function fmtUsd(x) {
   if (x == null) return "–";
   if (x < 1e3) return "US$\u00a0" + nf(0).format(x);
   return x >= 1e6 ? "US$\u00a0" + nf(1).format(x / 1e6) + "\u00a0M" : "US$\u00a0" + nf(0).format(x / 1e3) + "\u00a0mil";
+}
+// US$ en T / B / M según el tamaño (market cap en billones, volumen en miles de millones)
+function fmtBig(x, signed = false) {
+  if (x == null) return "–";
+  const a = Math.abs(x), sg = signed ? (x >= 0 ? "+" : "−") : x < 0 ? "−" : "";
+  const [d, u] = a >= 1e12 ? [a / 1e12, "\u00a0T"] : a >= 1e9 ? [a / 1e9, "\u00a0B"] : [a / 1e6, "\u00a0M"];
+  return `${sg}US$\u00a0${nf(a >= 1e12 ? 3 : a >= 1e11 ? 1 : 2).format(d)}${u}`;
 }
 const fmtSigned = (x) => x == null ? "–" : (x >= 0 ? "+" : "−") + fmtUsd(Math.abs(x));
 function fmtAge(s) {
@@ -1467,7 +1483,8 @@ function renderStatus(st) {
         liquidationsTile(st.liquidations),
       ]),
       ...(() => { const t = techTiles(current.data);
-        return [group(`Precio y técnicos · ${current.tf}`, t.slice(0, 3)), group("Volatilidad y posicionamiento", t.slice(3))]; })(),
+        return [group(`Precio y técnicos · ${current.tf}`, t.slice(0, 3)), group("Volatilidad y OI", t.slice(3))]; })(),
+      ...(current.market ? [group("Dinero en el mercado · diario", marketTiles(current.market))] : []),
       group("Flujo y señales", [whalesTile(st.whales), ...[strategyTile(st.strategy)].flat(), ...executorTile(st.executor), ...mlTile(st.ml),
         ...paperTiles(st.paper)]),
     ].join("");
@@ -1538,9 +1555,63 @@ function techTiles(d) {
     const ls = (col) => { const v = last(dv, col), a = ago(dv, col, D);
       return v == null ? "–" : fmtRatio(v) + (a == null ? "" : ` (${v >= a ? "+" : "−"}${fmtRatio(Math.abs(v - a))})`); };
     tiles.push(tile("Open interest (USD)", fmtUsdM(oi), [["24 h · 7 d", `${sp(pctOf(oi, ago(dv, "open_interest_usd", D)), 1)} · ${sp(pctOf(oi, ago(dv, "open_interest_usd", 7 * D)), 1)}`],
-      ["L/S top traders (posición)", ls("top_trader_position_ls_ratio")], ["L/S cuentas (todas)", ls("global_account_ls_ratio")]]));
+      [`<span title="ratio de posiciones de los top traders">L/S top traders</span>`, ls("top_trader_position_ls_ratio")], ["L/S cuentas (todas)", ls("global_account_ls_ratio")]]));
   }
   return tiles;
+}
+
+// ---------- dinero en el mercado (market.json: CoinGecko + DefiLlama, un dato por día cerrado) ----------
+function marketLast(m, col) { for (let i = m.t.length - 1; i >= 0; i--) if (m[col][i] != null) return i; return -1; }
+// cambio contra n días antes del último dato de la columna: [diferencia, fracción]
+function marketChg(m, col, n) {
+  const i = marketLast(m, col);
+  if (i < n || m[col][i - n] == null || m.t[i] - m.t[i - n] !== n * 86400) return [null, null];
+  return [m[col][i] - m[col][i - n], m[col][i] / m[col][i - n] - 1];
+}
+const spanSign = (x, txt) => x == null ? "–" : `<span class="${x >= 0 ? "pos" : "neg"}">${txt}</span>`;
+const fmtChg = ([d, f]) => d == null ? "–" : spanSign(d, `${fmtBig(d, true)} (${f >= 0 ? "+" : "−"}${nf(1).format(Math.abs(f * 100))} %)`);
+const dayLabel = (t) => new Date(t * 1000).toLocaleDateString("es-AR", { timeZone: "UTC", day: "2-digit", month: "2-digit" });
+
+function marketTiles(m) {
+  const out = [];
+  const iC = marketLast(m, "market_cap_usd"), iV = marketLast(m, "volume_24h_usd"), iS = marketLast(m, "stablecoins_usd");
+  if (iC >= 0) out.push(tile(`Market cap BTC <span class="muted">${dayLabel(m.t[iC])}</span>`, fmtBig(m.market_cap_usd[iC]),
+    [["1 d", fmtChg(marketChg(m, "market_cap_usd", 1))], ["7 d", fmtChg(marketChg(m, "market_cap_usd", 7))],
+     ["30 d", fmtChg(marketChg(m, "market_cap_usd", 30))]]));
+  if (iV >= 0) {
+    const v = m.volume_24h_usd[iV], avg = m.volume_avg_30d[iV];
+    out.push(tile(`<span title="CoinGecko: todos los exchanges">Volumen 24 h BTC</span>`, fmtBig(v),
+      [["promedio 30 d", fmtBig(avg)], ["vs promedio", avg ? spanSign(v - avg, `${nf(2).format(v / avg)}×`) : "–"],
+       ["día anterior", fmtChg(marketChg(m, "volume_24h_usd", 1))]]));
+  }
+  if (iS >= 0) out.push(tile(`<span title="DefiLlama: stablecoins atadas al dólar, todas las redes">Stablecoins (US$)</span>`,
+    fmtBig(m.stablecoins_usd[iS]), [["1 d", fmtChg(marketChg(m, "stablecoins_usd", 1))],
+      ["7 d", fmtChg(marketChg(m, "stablecoins_usd", 7))], ["30 d", fmtChg(marketChg(m, "stablecoins_usd", 30))]]));
+  return out.length ? out : [tile("Dinero en el mercado", "–", [["estado", "sin datos"]])];
+}
+
+const DAILY_ROWS = 14;
+function renderDaily(m) {
+  const card = document.getElementById("daily");
+  if (!m || !m.t.length) { card.hidden = true; return; }
+  const rows = [];
+  for (let i = m.t.length - 1; i >= 1 && rows.length < DAILY_ROWS; i--) {
+    const d = (col) => m[col][i] == null || m[col][i - 1] == null ? null : m[col][i] - m[col][i - 1];
+    const f = (col) => m[col][i] == null || !m[col][i - 1] ? null : m[col][i] / m[col][i - 1] - 1;
+    const pc = (x) => x == null ? "–" : spanSign(x, `${x >= 0 ? "+" : "−"}${nf(2).format(Math.abs(x * 100))} %`);
+    const v = m.volume_24h_usd[i], avg = m.volume_avg_30d[i];
+    rows.push(`<tr><td>${dayLabel(m.t[i])}</td><td class="num">${fmtPrice(m.price_usd[i])}</td><td class="num">${pc(f("price_usd"))}</td>`
+      + `<td class="num">${fmtBig(m.market_cap_usd[i])}</td><td class="num">${d("market_cap_usd") == null ? "–" : spanSign(d("market_cap_usd"), fmtBig(d("market_cap_usd"), true))}</td>`
+      + `<td class="num">${fmtBig(v)}</td><td class="num">${v != null && avg ? spanSign(v - avg, nf(2).format(v / avg) + "×") : "–"}</td>`
+      + `<td class="num">${fmtBig(m.stablecoins_usd[i])}</td><td class="num">${d("stablecoins_usd") == null ? "–" : spanSign(d("stablecoins_usd"), fmtBig(d("stablecoins_usd"), true))}</td></tr>`);
+  }
+  card.innerHTML = `<h2>Día a día <span class="muted">· días UTC cerrados, el más nuevo arriba</span></h2>`
+    + `<div class="scroll-x"><table><thead><tr><th>Día</th><th>Cierre</th><th>Δ precio</th><th>Market cap BTC</th><th>Δ market cap</th>`
+    + `<th>Volumen 24 h</th><th>vs prom. 30 d</th><th>Stablecoins</th><th>Δ stablecoins</th></tr></thead><tbody>${rows.join("")}</tbody></table></div>`
+    + `<p class="note">Δ market cap ≈ Δ precio × BTC en circulación: muestra cuánto cambió la valuación, no cuánta plata entró `
+    + `(poca plata puede mover mucho el precio). Dólares que entran a cripto: mejor mirar las stablecoins (se emiten cuando `
+    + `entra dinero y se queman cuando sale) junto con el volumen. Fuentes: CoinGecko (precio, market cap, volumen de todos los exchanges) y DefiLlama.</p>`;
+  card.hidden = false;
 }
 
 // Tarjeta: etiqueta, valor grande y filas "dato — valor" (más fácil de leer que una línea corrida)
@@ -1636,7 +1707,7 @@ function mlTile(m) {
     ? `AUC movimiento ${nf(2).format(L.auc_move)}${L.auc_direction != null ? ` · dirección ${nf(2).format(L.auc_direction)}` : ""} (${nf(0).format(L.n)} velas)`
     : `${nf(0).format(L.n || 0)} de ${nf(0).format(L.min_n || 0)} velas para medirlo`;
   const rows = [
-    [`se mueve > ${th} en ${m.horizon_h} h`, `${pc(m.p_move)} (base ${pc(1 - m.base_rate.neutral)})`],
+    [`mueve > ${th}`, `${pc(m.p_move)} (base ${pc(1 - m.base_rate.neutral)})`],
     ["percentil 90 d", nf(0).format(m.p_move_pctile_90d)],
     [`sube > ${th}`, `${pc(m.p_long)} (base ${pc(m.base_rate.long)})`],
     [`baja > ${th}`, `${pc(m.p_short)} (base ${pc(m.base_rate.short)})`],
@@ -1717,6 +1788,8 @@ async function load(tf, keepView) {
     const [data, st, lq, strat, reg] = await Promise.all([getJSON(`chart_${tf}.json`), getJSON("status.json"),
       getJSON("liquidity.json").catch(() => null), getJSON("strategy.json").catch(() => null),
       getJSON("regime.json").catch(() => null)]);
+    current.market = await getJSON("market.json").catch(() => null);
+    renderDaily(current.market);
     renderRegime(reg);
     current.tf = tf;
     current.strategy = strat;
