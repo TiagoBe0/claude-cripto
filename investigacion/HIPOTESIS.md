@@ -174,3 +174,48 @@ precio rebota.
 
 **P4 · Orden gigante.** Al menos una orden de ≥ US$ 1 M en la hora, con el neto de esas órdenes comprador →
 **largo**; vendedor → **corto**.
+
+---
+
+# Ronda 4 · emisión de stablecoins (registrada el 2026-10-05, antes de correrla)
+
+Idea: USDT y USDC se crean cuando alguien deposita dólares en Tether o Circle y se queman cuando los retira.
+Emisión neta = dólares nuevos disponibles para comprar cripto ("pólvora seca"). Si llegan antes de usarse,
+una emisión fuerte debería anticipar suba de BTC en días o semanas, y una quema, baja.
+
+Qué se vio antes de registrar (para juzgar el sesgo): la distribución de la emisión neta diaria de USDT + USDC
+de 2024 a hoy (mediana +62 M, percentiles 1 y 99 de −978 M y +1.824 M) y la tabla y las barras del panel de los
+últimos ~90 días, que caen **en el holdout**. Nunca se cruzó la emisión con el precio.
+
+## Datos y reglas
+
+- Oferta diaria **en unidades** de USDT + USDC (DefiLlama, `data/research/stablecoins_1d.csv`,
+  `python -m investigacion.datos`). Emisión neta del día = diferencia de la oferta con el día anterior.
+  Se usa la suma USDT + USDC (más del 80 % del total) y no el total, que salta cuando DefiLlama suma una
+  stablecoin nueva.
+- **Un día de demora a propósito:** no está claro a qué hora del día arma DefiLlama el dato fechado D, así que la
+  decisión al cierre del día D solo usa datos fechados ≤ D (nunca D + 1). Puede costar algo de ventaja; evita
+  mirar el futuro.
+- Todo lo demás, igual que la ronda 1: perpetuo BTCUSDT a 1x, decisión al cierre diario, costo 0,20 % ida y
+  vuelta más el funding real, percentiles contra los últimos 365 días (mínimo 180) con el de hoy incluido, base =
+  la misma operación todos los días, t con eventos separados al menos H días, mitades **A = 2020-2022** y
+  **B = 2023 a 2025-10-04**, holdout desde **2025-10-05** sin tocar.
+- Horizontes más largos que en la ronda 1, porque la plata nueva tarda en usarse: **H = 7, 14 y 30 días**.
+- **Pasa** igual que en la ronda 1: diferencia con la base, neta de costos, con el mismo signo favorable en las
+  dos mitades, t ≥ 2 en el total y al menos 20 eventos independientes. 3 hipótesis × 2 lados × 3 horizontes =
+  18 pruebas: por azar se espera ~1. Una que pase en un solo horizonte se toma con desconfianza.
+
+## Hipótesis
+
+**S1 · Día de emisión fuerte.** Emisión neta del día en percentil ≥ 95 → **largo**; ≤ 5 (quema fuerte) → **corto**.
+
+**S2 · Régimen de liquidez.** Emisión neta de 30 días en percentil ≥ 80 → **largo**; ≤ 20 → **corto**.
+
+**S3 · Pólvora seca sin usar.** Emisión neta de 7 días en percentil ≥ 80 y BTC que no subió en esos 7 días (≤ 0)
+→ **largo** (entró plata que todavía no empujó el precio). Emisión de 7 días en percentil ≤ 20 y BTC que no bajó
+(≥ 0) → **corto**.
+
+## Holdout (una sola corrida)
+
+Solo si alguna pasa: se corre una vez en el holdout con las mismas reglas. Pasa si la diferencia con la base
+tiene el mismo signo favorable con al menos 10 eventos independientes. Si no, se descarta sin ajustar.
