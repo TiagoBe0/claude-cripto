@@ -19,9 +19,19 @@
     "symbol": "BTCUSDT",
     "timeframe": "4h"
   },
+  "trading": {
+    "symbol": "BTC/USDT",
+    "max_order_usdt": 100
+  },
   "paper": {
     "start": "2026-10-04T16:00:00Z",
     "capital": 10000
+  },
+  "ml": {
+    "symbol": "BTCUSDT",
+    "horizons": [4, 24],
+    "threshold_pct": {"4": 0.5, "24": 1.5},
+    "live_horizon": 4
   },
   "external": {
     "fear_greed": true,

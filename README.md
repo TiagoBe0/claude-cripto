@@ -253,3 +253,63 @@ ballenas que compran en pedacitos (TWAP, icebergs) ni movimientos on-chain.
 systemctl --user status cripto-ballenas
 journalctl --user -u cripto-ballenas -f
 ```
+
+## Dataset para ML (`ml/build_dataset.py`)
+
+Con `"ml"` en la config, cada corrida del cron reescribe `data/ml/dataset_1h.csv`: una fila por vela de 1 h
+(desde 2024-01) con ~60 features y las etiquetas para entrenar un modelo que estime P(long) / P(short).
+
+- Features: retornos y técnicos de 1 h relativos al precio, contexto 4 h / 1 d, flujo taker y basis del perp,
+  OI y ratios long/short (métricas 5 m), funding, DVOL, Fear & Greed y, desde 2026-10, ballenas,
+  liquidaciones y desbalance del libro (NaN antes de esa fecha).
+- Sin filtración del futuro: la fila `timestamp` se conoce al cierre de la vela (`timestamp + 1 h`); las velas
+  de 4 h / 1 d se unen por su hora de cierre y lo de mayor frecuencia se agrega dentro de la hora.
+- Etiquetas por horizonte H (`ml.horizons`): `fwd_ret_{H}h` (log-retorno futuro) y `label_{H}h` = 1 / -1 / 0
+  según supere ±`ml.threshold_pct[H]` %. Las últimas H filas quedan sin etiqueta.
+
+A mano: `.venv/bin/python ml/build_dataset.py`.
+
+### Baseline (`ml/baseline.py`)
+
+`.venv/bin/python ml/baseline.py [--horizon 4]` (requiere `requirements-ml.txt`): walk-forward mensual desde
+2025-01 con prior, regresión logística y LightGBM; escribe `data/ml/baseline_{preds,report}_{H}h.*`.
+Resultado 2026-10-05 (H = 4 h, 15.4k horas de test): LightGBM baja el log loss 0,972 -> 0,914 y gana al prior
+22/22 meses, pero solo porque predice *si* habrá movimiento (AUC 0,70); la *dirección* queda en AUC 0,51 y la
+señal P(long) - P(short) pierde después de costos.
+Para reevaluar cuando ballenas, liquidaciones y libro junten historia (unos 3 meses):
+`.venv/bin/python ml/baseline.py --since 2026-10-04 --test-start 2026-12`. Con `--since` el filtro de
+cobertura ≥ 50 % se calcula sobre ese período, así esas features entran al modelo.
+
+### Predicción en vivo (`ml/live_model.py`)
+
+Con `ml.live_horizon` en la config (requiere `requirements-ml.txt`; si no está, solo falla este paso), cada
+corrida reentrena el LightGBM con todo lo etiquetado (~4 s) y predice la última vela cerrada:
+`data/ml/prediction.json` (P(short/neutral/long), P(movimiento) = 1 − P(neutral) y su percentil en 90 días) y
+`data/ml/predictions_log.csv` (una fila por vela, solo se agrega). Con ≥ 48 velas ya etiquetadas,
+`prediction.json` incluye la evaluación en vivo (log loss vs prior, AUC de movimiento y de dirección). En el
+dashboard es la tarjeta "Modelo: movimiento fuerte en 4 h": en alerta cuando el percentil es ≥ 80.
+
+## Operar en Binance desde la consola (`trade.py`)
+
+Compra y venta spot. **Por defecto va a la testnet** (testnet.binance.vision, plata ficticia); la cuenta
+real se usa solo con `--real`, y ahí cada orden pide escribir `REAL` para salir.
+
+```bash
+.venv/bin/python trade.py precio
+.venv/bin/python trade.py saldo
+.venv/bin/python trade.py comprar 0.001                 # BTC a mercado
+.venv/bin/python trade.py comprar 50 --usdt             # gastar 50 USDT a mercado
+.venv/bin/python trade.py comprar 0.001 --precio 80000  # límite
+.venv/bin/python trade.py vender todo                   # todo el BTC libre
+.venv/bin/python trade.py ordenes
+.venv/bin/python trade.py cancelar <id|todas>
+.venv/bin/python trade.py historial
+```
+
+- Claves en `~/.config/claude-cripto/binance.env` (fuera del repo, permisos 600). La key real tiene que
+  tener **solo permiso de trading spot, sin retiros**, y restringida a la IP del servidor.
+- `config.json` → `trading.max_order_usdt`: tope por orden; una orden mayor se rechaza antes de enviarla.
+- `--sin-enviar` arma la orden y la muestra sin mandarla (funciona sin claves).
+- Antes de enviar valida mínimo de Binance, paso de cantidad y precio, y avisa si un límite está a más
+  de 10 % del mercado o cruza el libro.
+- Cada orden enviada queda en `data/trading/ordenes.jsonl`.
