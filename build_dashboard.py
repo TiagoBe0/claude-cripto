@@ -1,0 +1,289 @@
+"""Prepara los datos del dashboard (dashboard.html) a partir de los CSV.
+
+Escribe en <data_dir>/dashboard/:
+- chart_1h.json, chart_4h.json, chart_1d.json
+                                 velas spot, SMA 50/200, volumen spot y perp, RSI, MACD,
+                                 DVOL vs volatilidad realizada, Fear & Greed,
+                                 funding, open interest y ratios long/short,
+                                 alineados a la grilla de velas de cada timeframe
+                                 y flujo neto de órdenes grandes (ballenas)
+- status.json                    último snapshot, antigüedad de cada serie,
+                                 estado de la estrategia y del paper trading, liquidaciones de 24 h
+                                 y lectura de ballenas (comprando / vendiendo)
+- liquidity.json                 mapa de liquidez (reporte/liquidez.py): liquidaciones
+                                 estimadas por tramo, máximos/mínimos sin barrer y muros
+
+Los JSON van por columna ({"t": [...], "close": [...]}) en segundos UTC,
+mucho más livianos que los JSON fila por fila que exporta storage.py.
+
+Uso:
+    python build_dashboard.py               # usa data/
+    python build_dashboard.py otra/carpeta
+"""
+
+import json
+import sys
+import time
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+from reporte import liquidez
+import whale_trades_ws
+from storage import last_timestamp
+
+SYMBOL = "BTCUSDT"
+PERIOD_S = {"1h": 3600, "4h": 4 * 3600, "1d": 86400}
+# Histórico que viaja al navegador. Los indicadores (SMA 200, volatilidad a 30 d)
+# se calculan con toda la serie y recién después se recorta, así que el primer
+# tramo visible no arranca con huecos. Sin recorte, el JSON de 1h pesaba 4 MB y
+# se volvía a bajar entero en cada refresco.
+HISTORY_DAYS = {"1h": 180, "4h": 730, "1d": None}
+RV_DAYS = 30  # misma ventana que el DVOL (volatilidad implícita a 30 días)
+WHALE_MARKETS = whale_trades_ws.MARKETS
+WHALE_WINDOWS_H = [1, 4, 24]
+WHALE_THRESHOLD = 0.15  # desbalance (compra - venta) / total para decir "comprando" o "vendiendo"
+
+# Período esperado entre filas (s) según el sufijo del archivo; lo usa el
+# dashboard para marcar series que dejaron de actualizarse.
+SERIES_PERIOD = [
+    ("_metrics_5m", 300),
+    ("_whale_trades_1m", 60),
+    ("_snapshot", 3600),  # una fila por corrida del cron
+    ("_funding", 8 * 3600),
+    ("_1h", 3600),
+    ("_4h", 4 * 3600),
+    ("_1d", 86400),
+    ("fear_greed", 86400),
+]
+
+
+def _read(path: Path, cols: list[str]) -> pd.DataFrame:
+    df = pd.read_csv(path, usecols=["timestamp", *cols])
+    df.index = pd.to_datetime(df.pop("timestamp"), unit="ms", utc=True)
+    return df
+
+
+def _columns(df: pd.DataFrame, digits: dict[str, int]) -> dict:
+    """DataFrame indexado por tiempo -> dict por columna, NaN -> null."""
+    out = {"t": df.index.as_unit("s").astype("int64").tolist()}
+    for col, nd in digits.items():
+        s = df[col].round(nd).astype(object)
+        out[col] = s.where(df[col].notna(), None).tolist()
+    return out
+
+
+def chart_data(data_dir: Path, tf: str) -> dict:
+    rule = {"1h": "1h", "4h": "4h", "1d": "1D"}[tf]
+    candles = _read(data_dir / f"{SYMBOL}_{tf}.csv", ["open", "high", "low", "close", "volume"])
+    ind = _read(data_dir / f"{SYMBOL}_{tf}_indicators.csv",
+                ["sma_50", "sma_200", "rsi_14", "macd", "macd_signal", "macd_hist", "log_return"])
+    candles = candles.join(ind)
+    # Volumen del perpetuo en la grilla spot, para el perfil de volumen (spot + perp)
+    perp = _read(data_dir / f"{SYMBOL}_perp_{tf}.csv", ["volume"]).volume
+    candles["perp_volume"] = perp.reindex(candles.index)
+
+    # Volatilidad realizada a 30 días, anualizada (cripto opera 24/7: 8760 h o 365 d por año)
+    n = RV_DAYS * 86400 // PERIOD_S[tf]
+    per_year = 365 * 86400 / PERIOD_S[tf]
+    candles["rv_30d"] = candles.pop("log_return").rolling(n).std() * np.sqrt(per_year) * 100
+    dvol = _read(data_dir / "BTC_dvol_1h.csv", ["close"]).close
+    if tf != "1h":
+        dvol = dvol.resample(rule).last()  # cierre de la vela
+    candles["dvol"] = dvol.reindex(candles.index)
+    # Fear & Greed es diario (00:00 UTC): en 1h cada valor se extiende a las horas de su día
+    fng = _read(data_dir / "fear_greed.csv", ["value"]).value
+    candles["fng"] = fng.reindex(candles.index, method="ffill", limit=PERIOD_S["1d"] // PERIOD_S[tf] * 2)
+
+    # Todo se lleva a la grilla de velas: si una serie tuviera tiempos fuera
+    # de ella, el eje del gráfico intercalaría barras vacías entre velas.
+    funding = _read(data_dir / f"{SYMBOL}_funding.csv", ["funding_rate"])
+    if tf == "1d":
+        funding = funding.resample(rule).sum(min_count=1)  # funding acumulado del día
+    else:
+        funding.index = funding.index.floor(rule)  # vienen con +1 ms a veces
+    metrics = _read(data_dir / f"{SYMBOL}_metrics_5m.csv",
+                    ["open_interest_usd", "top_trader_position_ls_ratio", "global_account_ls_ratio"])
+    metrics = metrics.resample(rule).last()  # niveles: el último valor de cada vela
+    derivs = funding.join(metrics, how="outer").dropna(how="all")
+    # Las métricas llegan hasta hace 5 min; se cortan en la última vela
+    # cerrada para no mostrar la hora (o el día) en curso.
+    derivs = derivs[derivs.index <= candles.index[-1]]
+
+    if HISTORY_DAYS[tf]:
+        start = candles.index[-1] - pd.Timedelta(days=HISTORY_DAYS[tf])
+        candles = candles[candles.index >= start]
+        derivs = derivs[derivs.index >= start]
+
+    whales = whale_candles(data_dir, rule, candles.index)
+
+    return {
+        "timeframe": tf,
+        "candles": _columns(candles, {"open": 2, "high": 2, "low": 2, "close": 2,
+                                      "volume": 3, "perp_volume": 3, "sma_50": 2, "sma_200": 2, "rsi_14": 2,
+                                      "macd": 2, "macd_signal": 2, "macd_hist": 2,
+                                      "rv_30d": 2, "dvol": 2, "fng": 0}),
+        "derivs": _columns(derivs, {"funding_rate": 8, "open_interest_usd": 0,
+                                    "top_trader_position_ls_ratio": 4, "global_account_ls_ratio": 4}),
+        "whales": None if whales is None else _columns(whales, {c: 0 for c in whales.columns}),
+    }
+
+
+def _whale_minutes(data_dir: Path) -> pd.DataFrame | None:
+    path = data_dir / f"{SYMBOL}_whale_trades_1m.csv"
+    if not path.exists() or last_timestamp(path) is None:
+        return None
+    df = pd.read_csv(path)
+    df.index = pd.to_datetime(df.pop("timestamp"), unit="ms", utc=True)
+    return df.drop(columns="datetime_utc")
+
+
+def whale_candles(data_dir: Path, rule: str, grid: pd.DatetimeIndex) -> pd.DataFrame | None:
+    """Flujo neto de ballenas (compra - venta, USD) por vela: total y por mercado."""
+    df = _whale_minutes(data_dir)
+    if df is None:
+        return None
+    out = pd.DataFrame(index=df.index)
+    for m in WHALE_MARKETS:
+        out[m] = df[f"{m}_whale_buy_usd"] - df[f"{m}_whale_sell_usd"]
+    out = out.resample(rule).sum(min_count=1)
+    out["net"] = out[WHALE_MARKETS].sum(axis=1, min_count=1)
+    # Solo velas cerradas y dentro de la grilla de velas spot
+    return out[out.index.isin(grid)].dropna(how="all")
+
+
+def whale_status(data_dir: Path) -> dict | None:
+    """Lectura de ballenas en ventanas de 1, 4 y 24 h, más el posicionamiento de top traders."""
+    df = _whale_minutes(data_dir)
+    if df is None:
+        return None
+    end = df.index[-1] + pd.Timedelta(minutes=1)
+    windows = []
+    for h in WHALE_WINDOWS_H:
+        w = df[df.index >= end - pd.Timedelta(hours=h)]
+        buy = sum(w[f"{m}_whale_buy_usd"].sum() for m in WHALE_MARKETS)
+        sell = sum(w[f"{m}_whale_sell_usd"].sum() for m in WHALE_MARKETS)
+        total = sum(w[f"{m}_buy_usd"].sum() + w[f"{m}_sell_usd"].sum() for m in WHALE_MARKETS)
+        imb = (buy - sell) / (buy + sell) if buy + sell else 0.0
+        windows.append({
+            "hours": h, "minutes": len(w), "buy_usd": round(float(buy), 0), "sell_usd": round(float(sell), 0),
+            "net_usd": round(float(buy - sell), 0), "imbalance": round(float(imb), 4),
+            "share_of_volume": round(float((buy + sell) / total), 4) if total else None,
+            "n_orders": int(sum(w[f"{m}_whale_{s}_n"].sum() for m in WHALE_MARKETS for s in ("buy", "sell"))),
+            "by_market": {m: round(float(w[f"{m}_whale_buy_usd"].sum() - w[f"{m}_whale_sell_usd"].sum()), 0)
+                          for m in WHALE_MARKETS},
+            "reading": "comprando" if imb >= WHALE_THRESHOLD else "vendiendo" if imb <= -WHALE_THRESHOLD
+                       else "neutral",
+        })
+    # Top traders de Binance (mayores cuentas por margen): ratio long/short de sus posiciones y cambio en 24 h
+    top = None
+    mpath = data_dir / f"{SYMBOL}_metrics_5m.csv"
+    if mpath.exists():
+        m = _read(mpath, ["top_trader_position_ls_ratio", "global_account_ls_ratio"]).dropna()
+        if len(m):
+            now, prev = m.iloc[-1], m[m.index <= m.index[-1] - pd.Timedelta(hours=24)]
+            top = {"ratio": round(float(now.top_trader_position_ls_ratio), 4),
+                   "retail_ratio": round(float(now.global_account_ls_ratio), 4),
+                   "change_24h": round(float(now.top_trader_position_ls_ratio
+                                             - prev.top_trader_position_ls_ratio.iloc[-1]), 4) if len(prev) else None}
+    return {"since": int(df.index[0].timestamp()), "min_usd": whale_trades_ws.MIN_USD, "threshold": WHALE_THRESHOLD,
+            "windows": windows, "top_traders": top}
+
+
+def day_stats(data_dir: Path) -> dict | None:
+    """Precio, variación, máximo, mínimo y volumen de las últimas 24 velas de 1h.
+
+    Es el respaldo de la franja de arriba del panel: el navegador la pisa con el
+    ticker en vivo de Binance, pero si el WebSocket no conecta se ve esto.
+    """
+    path = data_dir / f"{SYMBOL}_1h.csv"
+    if not path.exists():
+        return None
+    c = _read(path, ["open", "high", "low", "close", "volume"]).tail(24)
+    if len(c) < 24:
+        return None
+    first, last = c.open.iloc[0], c.close.iloc[-1]
+    return {"t": int(c.index[-1].timestamp()) + 3600, "price": round(float(last), 2),
+            "change_pct": round(float((last - first) / first * 100), 3),
+            "high": round(float(c.high.max()), 2), "low": round(float(c.low.min()), 2),
+            "volume": round(float(c.volume.sum()), 3)}
+
+
+def status_data(data_dir: Path) -> dict:
+    series = []
+    for csv_path in sorted(data_dir.glob("*.csv")):
+        if csv_path.stem.endswith("_indicators"):
+            continue  # misma frescura que sus velas
+        if not (csv_path.stem.startswith(SYMBOL) or csv_path.stem in ("fear_greed", "BTC_dvol_1h")):
+            continue  # otros símbolos: restos de configuraciones viejas, ya no se actualizan
+        period = next((p for suffix, p in SERIES_PERIOD if suffix in csv_path.stem), None)
+        last = last_timestamp(csv_path)
+        series.append({"name": csv_path.stem, "last": last // 1000 if last else None, "period": period})
+
+    snap = None
+    snap_path = data_dir / f"{SYMBOL}_snapshot.csv"
+    if snap_path.exists():
+        rows = pd.read_csv(snap_path)
+        if len(rows):
+            row = rows.iloc[-1]
+            snap = {k: (None if pd.isna(v) else v.item() if hasattr(v, "item") else v) for k, v in row.items()}
+    strategy = None
+    state_path = data_dir / "estrategia" / "state.json"
+    if state_path.exists():
+        strategy = json.loads(state_path.read_text())
+    paper = None
+    paper_path = data_dir / "estrategia" / "paper.json"
+    if paper_path.exists():
+        paper = json.loads(paper_path.read_text())
+    liq = None
+    liq_path = data_dir / f"{SYMBOL}_liquidations.csv"
+    if liq_path.exists() and liq_path.stat().st_size > 0:
+        rows = pd.read_csv(liq_path)
+        w = rows[rows.timestamp >= (time.time() - 86400) * 1000]
+        liq = {"since": int(rows.timestamp.iloc[0]) // 1000 if len(rows) else None, "events_24h": len(w),
+               "long_usd_24h": round(float(w.usd[w.side == "long"].sum()), 2),
+               "short_usd_24h": round(float(w.usd[w.side == "short"].sum()), 2)}
+    return {"generated": int(time.time()), "series": series, "snapshot": snap,
+            "strategy": strategy, "paper": paper, "liquidations": liq, "whales": whale_status(data_dir),
+            "day": day_stats(data_dir)}
+
+
+def liquidity_data(data_dir: Path) -> dict:
+    """Cada parte por separado: si una falla (p. ej. sin red para los libros), las otras se muestran igual."""
+    out = {"generated": int(time.time()),
+           "model": "OI de Binance 30 días, apalancamiento supuesto "
+                    + ", ".join(f"{l}x {p:.0%}" for l, p in liquidez.LEVERAGE_MIX.items())}
+    try:
+        price, bins = liquidez.estimated_bins(data_dir)
+        out["estimated"] = {"price": round(price, 2), "bin_pct": 0.5,
+                            "bins": bins.round({"price": 2, "usd": 0}).to_dict(orient="records")}
+    except (OSError, KeyError, IndexError, ValueError) as e:
+        out["estimated"] = {"error": f"{type(e).__name__}: {e}"}
+    try:
+        out["swing_pools"] = liquidez.swing_pools(data_dir)
+    except (OSError, KeyError, IndexError, ValueError) as e:
+        out["swing_pools"] = {"error": f"{type(e).__name__}: {e}"}
+    out["walls"] = liquidez.order_book_walls()  # maneja sus propios errores de red
+    return out
+
+
+def _write(dest: Path, obj: dict) -> None:
+    tmp = dest.with_suffix(".tmp")
+    tmp.write_text(json.dumps(obj, separators=(",", ":"), allow_nan=False))
+    tmp.replace(dest)
+
+
+def build(data_dir: Path) -> Path:
+    out_dir = data_dir / "dashboard"
+    out_dir.mkdir(exist_ok=True)
+    for tf in PERIOD_S:
+        _write(out_dir / f"chart_{tf}.json", chart_data(data_dir, tf))
+    _write(out_dir / "status.json", status_data(data_dir))
+    _write(out_dir / "liquidity.json", liquidity_data(data_dir))
+    return out_dir
+
+
+if __name__ == "__main__":
+    d = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).with_name("data")
+    print(build(d))

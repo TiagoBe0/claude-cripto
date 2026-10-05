@@ -1,0 +1,76 @@
+// Confluencia dinámica: tendencia (EMA 200) + momentum (cruce de MACD, RSI 50-70) + riesgo por ATR.
+// Solo compras, sin apalancamiento. Pensada para BINANCE:BTCUSDT; el backtest de referencia es 4h.
+//
+//   Entrada: cierre sobre la EMA 200, MACD(12,26,9) cruza sobre su señal y 50 < RSI 14 < 70
+//            (opcional: ADX 14 > 25). Orden a mercado en la apertura de la vela siguiente.
+//   Salida:  stop = cierre de la señal − 2×ATR14, take profit = cierre de la señal + 4×ATR14 (1:2).
+//            Se fijan al cierre de la señal y quedan activos desde la vela de entrada.
+// Costos por lado en commission_value = 0.16 % (comisión 0.10 % + slippage 0.05 % + medio spread 0.01 %).
+//
+// Backtest de referencia (estrategia/confluencia.py, BTC 4h, costo 0.16 %/lado):
+//   2018-2022: CAGR 2 %,   MaxDD -45 %, 91 trades, PF 1.1
+//   2023-hoy:  CAGR -15 %, MaxDD -51 %, 76 trades, PF 0.63   (con ADX > 25: CAGR -9 %, PF 0.44)
+// NO es rentable fuera de muestra: se deja como referencia y para comparar, no para operar.
+// Diferencia esperable con Python: si una vela toca stop y take a la vez, Python asume el stop y
+// TradingView decide según el recorrido supuesto de la vela.
+
+//@version=6
+strategy("Confluencia EMA + MACD + RSI + ATR", overlay = true,
+     initial_capital = 10000,
+     default_qty_type = strategy.percent_of_equity, default_qty_value = 99,
+     commission_type = strategy.commission.percent, commission_value = 0.16,
+     slippage = 0, pyramiding = 0,
+     process_orders_on_close = false, calc_on_every_tick = false)
+
+emaLen    = input.int(200, "EMA de tendencia (velas)", minval = 1)
+rsiLo     = input.float(50, "RSI mínimo", group = "Momentum")
+rsiHi     = input.float(70, "RSI máximo", group = "Momentum")
+atrLen    = input.int(14, "ATR (velas)", minval = 1, group = "Riesgo")
+slMult    = input.float(2.0, "Stop: múltiplo de ATR", minval = 0.25, step = 0.25, group = "Riesgo")
+tpMult    = input.float(4.0, "Take profit: múltiplo de ATR", minval = 0.25, step = 0.25, group = "Riesgo")
+useAdx    = input.bool(false, "Exigir ADX mínimo", group = "Filtro de tendencia")
+adxMin    = input.float(25, "ADX mínimo", group = "Filtro de tendencia")
+startTime = input.time(timestamp("2018-01-01T00:00:00"), "Operar desde")
+
+trend = ta.ema(close, emaLen)
+[macdLine, signalLine, histLine] = ta.macd(close, 12, 26, 9)
+rsi = ta.rsi(close, 14)
+atr = ta.atr(atrLen)
+[diPlus, diMinus, adx] = ta.dmi(14, 14)
+// Se calcula en cada vela, fuera del "and": en v6 los "and" se evalúan en forma perezosa
+// y una función ta.* llamada solo a veces da resultados incorrectos.
+macdCross = ta.crossover(macdLine, signalLine)
+
+longCond = time >= startTime and close > trend and macdCross and rsi > rsiLo and rsi < rsiHi
+     and (not useAdx or adx > adxMin)
+
+var float slLevel = na
+var float tpLevel = na
+if longCond and strategy.position_size == 0
+    slLevel := close - slMult * atr
+    tpLevel := close + tpMult * atr
+    strategy.entry("Long", strategy.long)
+    strategy.exit("SL/TP", from_entry = "Long", stop = slLevel, limit = tpLevel)
+
+inLong = strategy.position_size > 0
+plot(trend, "EMA tendencia", color.orange, 2)
+plot(inLong ? slLevel : na, "Stop", color.red, 2, plot.style_linebr)
+plot(inLong ? tpLevel : na, "Take profit", color.green, 2, plot.style_linebr)
+plotshape(longCond and strategy.position_size == 0, "Señal", shape.triangleup, location.belowbar, color.teal, size = size.small)
+
+// Tabla de estado
+var tbl = table.new(position.top_right, 2, 6, bgcolor = color.new(color.gray, 85), border_width = 1)
+if barstate.islast
+    bull = close > trend
+    table.cell(tbl, 0, 0, "Tendencia (EMA " + str.tostring(emaLen) + ")")
+    table.cell(tbl, 1, 0, bull ? "Alcista" : "Bajista", text_color = bull ? color.green : color.red)
+    table.cell(tbl, 0, 1, "ATR " + str.tostring(atrLen))
+    table.cell(tbl, 1, 1, str.tostring(atr, format.mintick) + " (" + str.tostring(atr / close * 100, "#.##") + " %)")
+    table.cell(tbl, 0, 2, "RSI 14")
+    table.cell(tbl, 1, 2, str.tostring(rsi, "#.#"))
+    table.cell(tbl, 0, 3, "MACD vs señal")
+    table.cell(tbl, 1, 3, macdLine > signalLine ? "arriba" : "abajo")
+    table.cell(tbl, 0, 4, "ADX 14")
+    table.cell(tbl, 1, 4, str.tostring(adx, "#.#") + (useAdx ? (adx > adxMin ? " ✓" : " ✗") : ""))
+    table.cell(tbl, 0, 5, "Posición")
+    table.cell(tbl, 1, 5, inLong ? "Long · SL " + str.tostring(slLevel, format.mintick) + " · TP " + str.tostring(tpLevel, format.mintick) : "Fuera")

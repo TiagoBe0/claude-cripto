@@ -1,0 +1,1 @@
+2 * * * * cd /home/simaf/sbergamin/root/claude-cripto && .venv/bin/python binance_extract.py >> extract.log 2>&1

@@ -1,0 +1,12 @@
+[Unit]
+Description=Captura de órdenes grandes BTC (Binance spot/perp y Coinbase) para claude-cripto
+After=network-online.target
+
+[Service]
+WorkingDirectory=/home/simaf/sbergamin/root/claude-cripto
+ExecStart=/home/simaf/sbergamin/root/claude-cripto/.venv/bin/python whale_trades_ws.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,60 @@
+// Ruptura de Donchian con filtro de tendencia y stop trailing por ATR.
+// Gráfico: BINANCE:BTCUSDT (spot) en 4h. Solo compras, sin apalancamiento.
+//
+// Indicadores (3): EMA, canal de Donchian, ATR.
+//   Entrada: cierre por encima del máximo de las últimas 120 velas (~20 días)
+//            y por encima de la EMA 1200 (~200 días).
+//   Salida:  stop trailing a 4 ATR del cierre (solo sube), o cierre bajo la EMA.
+//
+// Las órdenes se ejecutan en la apertura de la vela siguiente a la señal.
+// Costos por lado incluidos en commission_value = 0.16 %:
+//   comisión taker Binance spot 0.10 % + slippage 0.05 % + medio spread 0.01 %.
+// Para estresar costos, cambiar "Commission" en Propiedades (p. ej. 0.32).
+//
+// Backtest de referencia (estrategia/backtest.py, BTC, costo 0.16 %/lado):
+//   2018-2022: CAGR 26 %, MaxDD -26 %, 33 trades, PF 2.6
+//   2023-hoy:  CAGR 15 %, MaxDD -25 %, 33 trades, PF 1.9
+// Ver la historia completa en TradingView requiere Deep Backtesting
+// (un plan gratuito carga pocos miles de velas de 4h).
+// TradingView no da idéntico a backtest.py: acá se invierte el 99% del capital (margen para
+// la comisión) y allá el 100%, ta.ema/ta.atr arrancan con una SMA en vez del primer
+// valor y, con menos velas cargadas, la EMA 1200 arranca más tarde. Las diferencias se achican
+// con historia larga; la referencia es backtest.py.
+
+//@version=6
+strategy("Donchian Trend 4h", overlay = true,
+     initial_capital = 10000,
+     default_qty_type = strategy.percent_of_equity, default_qty_value = 99,
+     commission_type = strategy.commission.percent, commission_value = 0.16,
+     slippage = 0, pyramiding = 0,
+     process_orders_on_close = false, calc_on_every_tick = false)
+
+emaLen    = input.int(1200, "EMA de tendencia (velas)", minval = 1)
+donLen    = input.int(120, "Donchian de ruptura (velas)", minval = 1)
+atrLen    = input.int(14, "ATR (velas)", minval = 1)
+atrMult   = input.float(4.0, "Stop: múltiplo de ATR", minval = 0.5, step = 0.5)
+startTime = input.time(timestamp("2018-01-01T00:00:00"), "Operar desde")
+
+trend   = ta.ema(close, emaLen)
+donHigh = ta.highest(high, donLen)[1]  // máximo de las velas anteriores, sin la actual
+atrVal  = ta.atr(atrLen)
+
+// El stop se calcula al cierre y queda activo durante la vela siguiente.
+var float trail = na
+inLong = strategy.position_size > 0
+if inLong
+    candidate = close - atrMult * atrVal
+    trail := na(trail) ? candidate : math.max(trail, candidate)
+else
+    trail := na
+
+if inLong
+    strategy.exit("Stop ATR", from_entry = "Long", stop = trail)
+    if close < trend
+        strategy.close("Long", comment = "Bajo EMA")
+else if time >= startTime and close > donHigh and close > trend
+    strategy.entry("Long", strategy.long)
+
+plot(trend, "EMA tendencia", color.orange, 2)
+plot(donHigh, "Donchian máximo", color.new(color.teal, 40))
+plot(trail, "Stop trailing", color.red, 2, plot.style_linebr)

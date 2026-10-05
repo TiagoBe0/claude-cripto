@@ -1,0 +1,1065 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BTC Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@5.2.1/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-0: #f4f4f2;
+    --surface-1: #fcfcfb;
+    --border: #e4e3df;
+    --grid: #efeeeb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #85847f;
+    --up: #2a78d6;        /* polaridad: sube / positivo */
+    --down: #e34948;      /* polaridad: baja / negativo */
+    --volume: #c9c8c2;
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --good: #0ca30c;
+    --warning: #fab219;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --surface-0: #111110;
+      --surface-1: #1a1a19;
+      --border: #2e2e2c;
+      --grid: #252523;
+      --text-primary: #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted: #8d8c85;
+      --up: #3987e5;
+      --down: #e66767;
+      --volume: #45443f;
+      --series-1: #3987e5;
+      --series-2: #d95926;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-0: #111110;
+    --surface-1: #1a1a19;
+    --border: #2e2e2c;
+    --grid: #252523;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #8d8c85;
+    --up: #3987e5;
+    --down: #e66767;
+    --volume: #45443f;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--surface-0);
+    color: var(--text-primary);
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-variant-numeric: tabular-nums;
+  }
+  main { max-width: 1600px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+
+  header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  h1 { font-size: 18px; margin: 0; font-weight: 600; }
+  .muted { color: var(--text-muted); font-size: 12px; }
+  .spacer { flex: 1; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .seg button {
+    border: 0; background: var(--surface-1); color: var(--text-secondary);
+    padding: 6px 14px; font: inherit; cursor: pointer;
+  }
+  .seg button[aria-pressed="true"] { background: var(--text-primary); color: var(--surface-1); }
+
+  .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+  .tile { padding: 12px 14px; }
+  .tile .label { color: var(--text-secondary); font-size: 12px; }
+  .tile .value { font-size: 22px; font-weight: 600; margin-top: 2px; }
+  .tile .sub { color: var(--text-muted); font-size: 12px; }
+  .tile .rows { margin-top: 6px; display: grid; gap: 2px; font-size: 12px; color: var(--text-muted); }
+  .tile .rows div { display: flex; justify-content: space-between; gap: 8px; }
+  .tile .rows b { color: var(--text-secondary); font-weight: 500; text-align: right; }
+
+  /* Franja de arriba: precio en vivo y lectura rápida */
+  .hero { display: flex; flex-wrap: wrap; gap: 16px 32px; align-items: center; padding: 16px 18px; }
+  .hero .price { font-size: 40px; font-weight: 700; letter-spacing: -0.02em; line-height: 1; transition: color .6s; }
+  .hero .price.tick-up { color: var(--up); transition: none; }
+  .hero .price.tick-down { color: var(--down); transition: none; }
+  .hero .meta { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 8px; color: var(--text-muted); font-size: 12px; }
+  .hero .meta b { color: var(--text-secondary); font-weight: 500; }
+  .chg { display: inline-block; padding: 3px 8px; border-radius: 6px; font-size: 14px; font-weight: 600; margin-left: 10px; vertical-align: 8px; }
+  .chg.up { color: var(--up); background: color-mix(in srgb, var(--up) 12%, transparent); }
+  .chg.down { color: var(--down); background: color-mix(in srgb, var(--down) 12%, transparent); }
+  .live { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); }
+  .live .dot.live-on { background: var(--good); animation: blink 1.6s ease-in-out infinite; }
+  .live .dot.live-off { background: var(--warning); }
+  @keyframes blink { 50% { opacity: .35; } }
+  .verdicts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; flex: 1 1 520px; }
+  .verdict { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+  .verdict .k { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; }
+  .verdict .v { font-size: 16px; font-weight: 600; margin-top: 2px; }
+  .verdict .v.up { color: var(--up); } .verdict .v.down { color: var(--down); }
+  .verdict .s { font-size: 12px; color: var(--text-muted); }
+
+  .groups { display: grid; gap: 14px; }
+  .group h2 { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; margin: 0 0 6px 2px; }
+
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chips button {
+    border: 1px solid var(--border); background: var(--surface-1); color: var(--text-muted);
+    border-radius: 999px; padding: 4px 12px; font: inherit; font-size: 12px; cursor: pointer; min-height: 32px;
+  }
+  .chips button[aria-pressed="true"] { color: var(--text-primary); border-color: var(--text-secondary); }
+  @media (prefers-reduced-motion: reduce) { .live .dot.live-on { animation: none; } .hero .price { transition: none; } }
+  #liq-canvas { position: absolute; left: 0; top: 0; z-index: 2; pointer-events: none; }
+  #vp-canvas { position: absolute; left: 0; top: 0; z-index: 1; pointer-events: none; }
+  .toggle select { font: inherit; color: inherit; background: var(--surface-1); border: 1px solid var(--border); border-radius: 6px; padding: 2px 4px; }
+  .pane-label .box { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: middle; margin: 0 4px 0 8px; opacity: .6; }
+  .liq-legend {
+    position: absolute; left: 10px; z-index: 3; pointer-events: none; font-size: 12px;
+    color: var(--text-secondary); background: color-mix(in srgb, var(--surface-1) 85%, transparent);
+    padding: 2px 6px; border-radius: 4px; max-width: calc(100% - 120px);
+  }
+  .liq-legend .box { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: middle; margin: 0 4px 0 8px; }
+  .toggle { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); cursor: pointer; }
+  .tile.alert { border-color: var(--warning); box-shadow: inset 0 0 0 1px var(--warning); }
+
+  .chart-card { position: relative; height: 1100px; overflow: hidden; }
+  #chart { position: absolute; inset: 0; }
+  .pane-label {
+    position: absolute; left: 10px; z-index: 3; pointer-events: none;
+    font-size: 12px; color: var(--text-secondary);
+    background: color-mix(in srgb, var(--surface-1) 85%, transparent);
+    padding: 2px 6px; border-radius: 4px; white-space: nowrap;
+  }
+  .pane-label b { color: var(--text-primary); font-weight: 600; }
+  .sw { display: inline-block; width: 14px; height: 0; border-top: 2px solid; vertical-align: middle; margin: 0 4px 0 8px; }
+  .sw.dash { border-top-style: dashed; }
+
+  details.card { padding: 0; }
+  details summary { padding: 12px 14px; cursor: pointer; display: flex; gap: 12px; align-items: center; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 14px; border-top: 1px solid var(--border); }
+  th { color: var(--text-secondary); font-weight: 500; }
+  td.num { text-align: right; }
+  .status { display: inline-flex; align-items: center; gap: 6px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .dot.good { background: var(--good); }
+  .dot.warning { background: var(--warning); }
+  .error { color: var(--down); padding: 12px 14px; }
+
+  @media (max-width: 640px) {
+    main { padding: 16px; }
+    .tile .value { font-size: 18px; }
+    .hero .price { font-size: 32px; }
+    .tiles { grid-template-columns: 1fr 1fr; gap: 8px; }
+    .tile { padding: 10px; }
+    .pane-label { white-space: normal; max-width: calc(100% - 80px); font-size: 11px; }
+    th, td { padding: 6px 8px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <section class="card hero" aria-label="Precio y lectura rápida">
+    <div>
+      <h1>BTC/USDT <span class="live" id="live"><span class="dot live-off"></span><span>conectando…</span></span></h1>
+      <div style="margin-top:8px"><span class="price" id="price">–</span><span class="chg" id="chg"></span></div>
+      <div class="meta" id="day-meta"></div>
+    </div>
+    <div class="verdicts" id="verdicts"></div>
+  </section>
+
+  <div class="groups" id="tiles" aria-label="Último snapshot"></div>
+
+  <div class="toolbar">
+    <div class="seg" role="group" aria-label="Timeframe">
+      <button data-tf="1h" aria-pressed="true">1h</button>
+      <button data-tf="4h" aria-pressed="false">4h</button>
+      <button data-tf="1d" aria-pressed="false">1d</button>
+    </div>
+    <label class="toggle"><input type="checkbox" id="vp-toggle" checked> Perfil de volumen
+      <select id="vp-source" aria-label="Volumen del perfil">
+        <option value="both">spot + perp</option><option value="spot">spot</option><option value="perp">perp</option>
+      </select></label>
+    <label class="toggle"><input type="checkbox" id="liq-toggle" checked> Mapa de liquidez</label>
+    <span class="spacer"></span>
+    <span class="muted" id="updated">cargando…</span>
+    <span class="muted">Eje en UTC</span>
+  </div>
+  <div class="chips" id="pane-chips" role="group" aria-label="Paneles del gráfico"></div>
+
+  <details class="card" id="freshness">
+    <summary><b>Estado de las series</b><span id="fresh-summary" class="muted"></span></summary>
+    <table>
+      <thead><tr><th>Serie</th><th>Último dato</th><th class="num">Antigüedad</th><th>Estado</th></tr></thead>
+      <tbody id="fresh-body"></tbody>
+    </table>
+  </details>
+
+  <section class="card chart-card" aria-label="Precio y derivados">
+    <div id="chart"></div>
+    <canvas id="vp-canvas"></canvas>
+    <canvas id="liq-canvas"></canvas>
+    <div id="labels"></div>
+    <div class="liq-legend" id="liq-legend" hidden></div>
+  </section>
+</main>
+
+<script>
+const LWC = LightweightCharts;
+const REFRESH_MS = 5 * 60 * 1000;   // se consulta status.json; el gráfico se baja solo si el cron generó datos nuevos
+const CRON_S = 3600;                 // el cron corre cada hora
+const DATA = "data/dashboard/";
+
+// ---------- formato ----------
+const nf = (d) => new Intl.NumberFormat("es-AR", { minimumFractionDigits: d, maximumFractionDigits: d });
+const fmtPrice = (x) => x == null ? "–" : nf(2).format(x);
+const fmtPct = (x, d = 4) => x == null ? "–" : nf(d).format(x * 100) + " %";
+const fmtUsdM = (x) => x == null ? "–" : "US$\u00a0" + nf(0).format(x / 1e6) + "\u00a0M";
+const fmtRatio = (x) => x == null ? "–" : nf(3).format(x);
+const fmtVol = (x) => x == null ? "–" : nf(0).format(x) + " BTC";
+const fmtLocal = (s) => new Date(s * 1000).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" });
+const fmtNum = (x, d) => x == null ? "–" : nf(d).format(x);
+function fmtUsd(x) {
+  if (x == null) return "–";
+  if (x < 1e3) return "US$\u00a0" + nf(0).format(x);
+  return x >= 1e6 ? "US$\u00a0" + nf(1).format(x / 1e6) + "\u00a0M" : "US$\u00a0" + nf(0).format(x / 1e3) + "\u00a0mil";
+}
+const fmtSigned = (x) => x == null ? "–" : (x >= 0 ? "+" : "−") + fmtUsd(Math.abs(x));
+function fmtAge(s) {
+  if (s < 3600) return Math.round(s / 60) + " min";
+  if (s < 2 * 86400) return nf(1).format(s / 3600) + " h";
+  return nf(1).format(s / 86400) + " d";
+}
+
+async function getJSON(name) {
+  const r = await fetch(DATA + name, { cache: "no-store" });
+  if (!r.ok) throw new Error(`${name}: HTTP ${r.status}`);
+  return r.json();
+}
+
+// ---------- tema ----------
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+function theme() {
+  return {
+    surface: css("--surface-1"), grid: css("--grid"), border: css("--border"),
+    text: css("--text-secondary"), primary: css("--text-primary"), muted: css("--text-muted"),
+    up: css("--up"), down: css("--down"), volume: css("--volume"),
+    s1: css("--series-1"), s2: css("--series-2"),
+  };
+}
+
+// ---------- gráfico ----------
+// h: alto en px del panel (escritorio). El de precio se calcula según la pantalla.
+const PANES = [
+  { key: "price",   title: "Precio",        h: 0 },
+  { key: "volume",  title: "Volumen",       h: 80 },
+  { key: "rsi",     title: "RSI",           h: 100 },
+  { key: "macd",    title: "MACD",          h: 110 },
+  { key: "funding", title: "Funding",       h: 100 },
+  { key: "oi",      title: "Open interest", h: 100 },
+  { key: "ls",      title: "Long/short",    h: 120 },
+  { key: "whales",  title: "Ballenas",      h: 120 },
+  { key: "vol",     title: "Volatilidad",   h: 130 },
+  { key: "fng",     title: "Fear & Greed",  h: 110 },
+];
+const MOBILE = matchMedia("(max-width: 640px)").matches;
+// En el celular arranca con pocos paneles: con los diez, cada uno queda ilegible
+const DEFAULT_PANES = MOBILE ? ["price", "volume", "rsi", "whales"] : PANES.map((p) => p.key);
+let enabledPanes = DEFAULT_PANES;
+try {
+  const saved = JSON.parse(localStorage.getItem("panes") || "null");
+  if (Array.isArray(saved)) enabledPanes = ["price", ...PANES.filter((p) => p.key !== "price" && saved.includes(p.key)).map((p) => p.key)];
+} catch (e) { /* sin storage: paneles por defecto */ }
+const activePanes = () => PANES.filter((p) => enabledPanes.includes(p.key));
+
+// Serie de mentira para los paneles apagados: el resto del código la usa sin preguntar si existe
+const NOOP = { setData() {}, update() {}, applyOptions() {}, data: () => [], createPriceLine: () => null,
+  removePriceLine() {}, priceToCoordinate: () => null };
+
+let chart, S = {}, current = { tf: "1h", data: {} };
+
+function paneHeights() {
+  const price = MOBILE ? Math.max(340, Math.round(innerHeight * 0.55)) : Math.max(460, Math.min(680, Math.round(innerHeight * 0.62)));
+  return activePanes().map((p) => p.key === "price" ? price : MOBILE ? Math.round(p.h * 0.85) : p.h);
+}
+
+function renderPaneChips() {
+  document.getElementById("pane-chips").innerHTML = `<span class="muted" style="align-self:center">Paneles:</span>`
+    + PANES.filter((p) => p.key !== "price").map((p) =>
+      `<button data-pane="${p.key}" aria-pressed="${enabledPanes.includes(p.key)}">${p.title}</button>`).join("");
+}
+document.getElementById("pane-chips").addEventListener("click", (ev) => {
+  const key = ev.target.dataset && ev.target.dataset.pane;
+  if (!key) return;
+  enabledPanes = enabledPanes.includes(key) ? enabledPanes.filter((k) => k !== key) : [...enabledPanes, key];
+  try { localStorage.setItem("panes", JSON.stringify(enabledPanes)); } catch (e) { /* nada */ }
+  renderPaneChips();
+  rebuildChart();
+});
+
+// Rehace el gráfico con los paneles elegidos, conservando lo que se estaba mirando
+function rebuildChart() {
+  const lr = chart.timeScale().getVisibleLogicalRange();
+  chart.remove();
+  S = {}; strategyLine = null; liq.lines = []; liq.key = ""; vp.key = "";
+  document.getElementById("labels").innerHTML = "";
+  buildChart();
+  if (current.data.candles) {
+    setChartData(current.data, false);
+    if (lr) chart.timeScale().setVisibleLogicalRange(lr);
+  }
+  if (current.status) setStrategyLine(current.status.strategy);
+  setLiquidityLines();
+}
+
+function buildChart() {
+  const t = theme();
+  const heights = paneHeights();
+  document.querySelector(".chart-card").style.height = (heights.reduce((a, b) => a + b, 0) + 30) + "px";
+  chart = LWC.createChart(document.getElementById("chart"), {
+    // En el celular, arrastrar en vertical tiene que mover la página, no el gráfico
+    handleScroll: { vertTouchDrag: false },
+    autoSize: true,
+    layout: {
+      background: { type: "solid", color: t.surface }, textColor: t.text, fontSize: 11,
+      panes: { separatorColor: t.border, separatorHoverColor: t.grid, enableResize: true },
+    },
+    grid: { vertLines: { color: t.grid }, horzLines: { color: t.grid } },
+    rightPriceScale: { borderColor: t.border },
+    timeScale: { borderColor: t.border, timeVisible: true, secondsVisible: false, rightOffset: 4 },
+    crosshair: { mode: LWC.CrosshairMode.Normal },
+    localization: { locale: "es-AR" },
+  });
+
+  const pct = { type: "custom", minMove: 1e-7, formatter: (p) => nf(4).format(p * 100) + "%" };
+  const usdM = { type: "custom", minMove: 1, formatter: (p) => nf(0).format(p / 1e6) + " M" };
+  const usd = { type: "custom", minMove: 0.01, formatter: (p) => nf(2).format(p) };
+  const btc = { type: "custom", minMove: 0.001, formatter: (p) => nf(0).format(p) };
+  const ratio = { type: "custom", minMove: 0.0001, formatter: (p) => nf(2).format(p) };
+  const usdM1 = { type: "custom", minMove: 1, formatter: (p) => nf(1).format(p / 1e6) + " M" };
+
+  const idx = Object.fromEntries(activePanes().map((p, i) => [p.key, i]));
+  const add = (key, type, opts) => key in idx ? chart.addSeries(type, opts, idx[key]) : NOOP;
+
+  S.candles = chart.addSeries(LWC.CandlestickSeries, { priceFormat: usd, priceLineVisible: true }, 0);
+  S.sma50 = chart.addSeries(LWC.LineSeries, { priceFormat: usd, lineWidth: 2, lineStyle: LWC.LineStyle.Dashed,
+    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }, 0);
+  S.sma200 = chart.addSeries(LWC.LineSeries, { priceFormat: usd, lineWidth: 2,
+    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }, 0);
+  const num1 = { type: "custom", minMove: 0.1, formatter: (p) => nf(1).format(p) };
+  const num0 = { type: "custom", minMove: 1, formatter: (p) => nf(0).format(p) };
+  const volPct = { type: "custom", minMove: 0.1, formatter: (p) => nf(0).format(p) + "%" };
+  const guide = (series, price) => series.createPriceLine({ price, lineWidth: 1,
+    lineStyle: LWC.LineStyle.Dotted, axisLabelVisible: false, title: "" });
+  const plain = { lineWidth: 2, priceLineVisible: false };
+
+  S.volume = add("volume", LWC.HistogramSeries, { priceFormat: btc, priceLineVisible: false });
+  S.rsi = add("rsi", LWC.LineSeries, { ...plain, priceFormat: num1 });
+  guide(S.rsi, 70); guide(S.rsi, 30);
+  S.macdHist = add("macd", LWC.HistogramSeries, { priceFormat: num0, priceLineVisible: false, lastValueVisible: false });
+  S.macd = add("macd", LWC.LineSeries, { ...plain, priceFormat: num0 });
+  S.macdSignal = add("macd", LWC.LineSeries, { ...plain, priceFormat: num0, lineStyle: LWC.LineStyle.Dashed });
+  S.funding = add("funding", LWC.HistogramSeries, { priceFormat: pct, priceLineVisible: false });
+  S.oi = add("oi", LWC.LineSeries, { ...plain, priceFormat: usdM });
+  S.lsTop = add("ls", LWC.LineSeries, { ...plain, priceFormat: ratio });
+  S.lsGlobal = add("ls", LWC.LineSeries, { ...plain, priceFormat: ratio });
+  guide(S.lsTop, 1);
+  // Ballenas: flujo neto por vela (barras, eje derecho) y acumulado desde que corre el recolector (línea, escala propia sin eje; su valor va en la etiqueta)
+  S.whaleNet = add("whales", LWC.HistogramSeries, { priceFormat: usdM1, priceLineVisible: false });
+  S.whaleCum = add("whales", LWC.LineSeries, { ...plain, priceFormat: usdM1, priceScaleId: "whale-cum",
+    lastValueVisible: false });
+  guide(S.whaleNet, 0);
+  S.dvol = add("vol", LWC.LineSeries, { ...plain, priceFormat: volPct });
+  S.rv = add("vol", LWC.LineSeries, { ...plain, priceFormat: volPct, lineStyle: LWC.LineStyle.Dashed });
+  S.fng = add("fng", LWC.LineSeries, { ...plain, priceFormat: num0 });
+  guide(S.fng, 75); guide(S.fng, 25);
+
+  chart.panes().forEach((p, i) => p.setStretchFactor(heights[i]));
+  applyTheme();
+
+  chart.subscribeCrosshairMove((param) => renderLabels(param));
+  if (!buildChart.observed) {
+    new ResizeObserver(() => requestAnimationFrame(positionLabels)).observe(document.getElementById("chart"));
+    buildChart.observed = true;
+  }
+}
+
+function applyTheme() {
+  const t = theme();
+  chart.applyOptions({
+    layout: { background: { type: "solid", color: t.surface }, textColor: t.text,
+              panes: { separatorColor: t.border, separatorHoverColor: t.grid } },
+    grid: { vertLines: { color: t.grid }, horzLines: { color: t.grid } },
+    rightPriceScale: { borderColor: t.border }, timeScale: { borderColor: t.border },
+  });
+  // Velas: sube = cuerpo hueco, baja = relleno (no depende solo del color)
+  S.candles.applyOptions({ upColor: "rgba(0,0,0,0)", downColor: t.down, borderUpColor: t.up,
+    borderDownColor: t.down, wickUpColor: t.up, wickDownColor: t.down });
+  S.sma50.applyOptions({ color: t.muted });
+  S.sma200.applyOptions({ color: t.primary });
+  S.volume.applyOptions({ color: t.volume });
+  S.oi.applyOptions({ color: t.s1 });
+  S.lsTop.applyOptions({ color: t.s1 });
+  S.lsGlobal.applyOptions({ color: t.s2 });
+  S.rsi.applyOptions({ color: t.s1 });
+  S.macd.applyOptions({ color: t.s1 });
+  S.macdSignal.applyOptions({ color: t.s2 });
+  S.dvol.applyOptions({ color: t.s1 });
+  S.rv.applyOptions({ color: t.s2 });
+  S.fng.applyOptions({ color: t.primary });
+  S.whaleCum.applyOptions({ color: t.primary });
+  if (current.data.derivs) setFunding(current.data.derivs);
+  if (current.data.candles) setWhales(current.data.whales);
+  if (current.data.candles) setMacdHist(current.data.candles);
+  if (current.status) setStrategyLine(current.status.strategy);
+  setLiquidityLines(); liq.key = ""; vp.key = "";
+  renderLabels();
+}
+
+function line(t, ys) {
+  const out = [];
+  for (let i = 0; i < t.length; i++) if (ys[i] != null) out.push({ time: t[i], value: ys[i] });
+  return out;
+}
+
+function setFunding(d) {
+  const t = theme();
+  const pts = [];
+  for (let i = 0; i < d.t.length; i++) {
+    const v = d.funding_rate[i];
+    if (v != null) pts.push({ time: d.t[i], value: v, color: v >= 0 ? t.up : t.down });
+  }
+  S.funding.setData(pts);
+}
+
+function setMacdHist(c) {
+  const t = theme();
+  const pts = [];
+  for (let i = 0; i < c.t.length; i++) {
+    const v = c.macd_hist[i];
+    if (v != null) pts.push({ time: c.t[i], value: v, color: v >= 0 ? t.up : t.down });
+  }
+  S.macdHist.setData(pts);
+}
+
+function setWhales(w) {
+  const t = theme();
+  const bars = [], cum = [];
+  let acc = 0;
+  if (w) for (let i = 0; i < w.t.length; i++) {
+    const v = w.net[i];
+    if (v == null) continue;
+    acc += v;
+    bars.push({ time: w.t[i], value: v, color: v >= 0 ? t.up : t.down });
+    cum.push({ time: w.t[i], value: acc });
+  }
+  S.whaleNet.setData(bars);
+  S.whaleCum.setData(cum);
+}
+
+// Nivel de la estrategia sobre el precio: stop si hay posición, cierre de 4 h que dispara la compra si no
+let strategyLine = null;
+function setStrategyLine(st) {
+  if (strategyLine) { S.candles.removePriceLine(strategyLine); strategyLine = null; }
+  if (!st) return;
+  const t = theme();
+  const level = st.in_position ? st.stop : st.entry_trigger;
+  if (level == null) return;
+  strategyLine = S.candles.createPriceLine({
+    price: level, color: st.in_position ? t.down : t.up, lineWidth: 1, lineStyle: LWC.LineStyle.Dashed,
+    axisLabelVisible: true, title: st.in_position ? "stop" : "entrada 4h",
+  });
+}
+
+function setChartData(data, keepView) {
+  const ts = chart.timeScale();
+  const prevRange = keepView ? ts.getVisibleRange() : null;
+  const prevLogical = keepView ? ts.getVisibleLogicalRange() : null;
+  const prevLen = current.data.candles ? current.data.candles.t.length : 0;
+  const atRightEdge = prevLogical && prevLogical.to >= prevLen - 2;
+
+  const c = data.candles, d = data.derivs;
+  const candles = [], vol = [];
+  for (let i = 0; i < c.t.length; i++) {
+    candles.push({ time: c.t[i], open: c.open[i], high: c.high[i], low: c.low[i], close: c.close[i] });
+    vol.push({ time: c.t[i], value: c.volume[i] });
+  }
+  current.data = data;
+  S.candles.setData(candles);
+  S.sma50.setData(line(c.t, c.sma_50));
+  S.sma200.setData(line(c.t, c.sma_200));
+  S.volume.setData(vol);
+  setFunding(d);
+  S.oi.setData(line(d.t, d.open_interest_usd));
+  S.lsTop.setData(line(d.t, d.top_trader_position_ls_ratio));
+  S.lsGlobal.setData(line(d.t, d.global_account_ls_ratio));
+  S.rsi.setData(line(c.t, c.rsi_14));
+  setMacdHist(c);
+  S.macd.setData(line(c.t, c.macd));
+  S.macdSignal.setData(line(c.t, c.macd_signal));
+  S.dvol.setData(line(c.t, c.dvol));
+  S.rv.setData(line(c.t, c.rv_30d));
+  S.fng.setData(line(c.t, c.fng));
+  setWhales(data.whales);
+  applyLiveBar();
+
+  if (prevRange && !atRightEdge) {
+    ts.setVisibleRange(prevRange);
+  } else {
+    // Vista inicial: último mes en 1h, tres meses en 4h, último año en 1d
+    const n = c.t.length, span = { "1h": 24 * 30, "4h": 6 * 90, "1d": 365 }[data.timeframe] || 365;
+    ts.setVisibleLogicalRange({ from: Math.max(0, n - span), to: n + 3 });
+  }
+  renderLabels();
+  requestAnimationFrame(positionLabels);
+}
+
+// ---------- etiquetas por panel (leyenda + valores bajo el cursor) ----------
+function valuesAt(param) {
+  // Sin cursor: últimos valores de cada serie
+  const pick = (series) => {
+    if (param && param.time !== undefined) return param.seriesData.get(series);
+    const all = series.data();
+    return all.length ? all[all.length - 1] : undefined;
+  };
+  return {
+    c: pick(S.candles), s50: pick(S.sma50), s200: pick(S.sma200), v: pick(S.volume),
+    f: pick(S.funding), oi: pick(S.oi), top: pick(S.lsTop), glob: pick(S.lsGlobal),
+    rsi: pick(S.rsi), mh: pick(S.macdHist), m: pick(S.macd), ms: pick(S.macdSignal),
+    dvol: pick(S.dvol), rv: pick(S.rv), fng: pick(S.fng), wn: pick(S.whaleNet), wc: pick(S.whaleCum),
+  };
+}
+
+function renderLabels(param) {
+  if (!chart) return;
+  const t = theme();
+  const v = valuesAt(param);
+  const val = (p) => p && p.value != null ? p.value : null;
+  const daily = current.tf === "1d";
+  const sw = (color, dash) => `<span class="sw${dash ? " dash" : ""}" style="border-top-color:${color}"></span>`;
+  const c = v.c;
+  const html = {
+    price: `Precio spot ${c ? `A <b>${fmtPrice(c.open)}</b> M <b>${fmtPrice(c.high)}</b> m <b>${fmtPrice(c.low)}</b> C <b>${fmtPrice(c.close)}</b>` : ""}`
+      + `${sw(t.muted, true)}SMA 50 <b>${fmtPrice(val(v.s50))}</b>${sw(t.primary)}SMA 200 <b>${fmtPrice(val(v.s200))}</b>`
+      + (vp.info ? `<br>Perfil de volumen ${VP_NAMES[vp.source]} (${nf(0).format(vp.info.candles)} velas visibles)`
+        + `${sw(t.s2, true)}POC <b>${fmtPrice(vp.info.poc)}</b>`
+        + `<span class="box" style="background:${t.s1}"></span>área de valor 70 % <b>${fmtPrice(vp.info.val)}</b> – <b>${fmtPrice(vp.info.vah)}</b>` : ""),
+    volume: `Volumen spot <b>${fmtVol(val(v.v))}</b>`,
+    rsi: `RSI 14 <b>${fmtNum(val(v.rsi), 1)}</b> <span class="muted">(guías 30 y 70)</span>`,
+    macd: `MACD 12/26/9${sw(t.s1)}MACD <b>${fmtNum(val(v.m), 0)}</b>${sw(t.s2, true)}señal <b>${fmtNum(val(v.ms), 0)}</b>`
+      + ` · histograma <b>${fmtNum(val(v.mh), 0)}</b>`,
+    vol: `Volatilidad anualizada${sw(t.s1)}DVOL implícita 30 d <b>${fmtNum(val(v.dvol), 1)}%</b>`
+      + `${sw(t.s2, true)}realizada 30 d <b>${fmtNum(val(v.rv), 1)}%</b>`,
+    fng: `Fear & Greed <b>${fmtNum(val(v.fng), 0)}</b> <span class="muted">(0 miedo extremo · 100 codicia extrema; diario)</span>`,
+    funding: `${daily ? "Funding acumulado del día" : "Funding rate (cada 8 h)"} <b>${fmtPct(val(v.f))}</b>`,
+    oi: `Open interest perp <b>${fmtUsdM(val(v.oi))}</b>`,
+    ls: `Ratio long/short${sw(t.s1)}top traders (posición) <b>${fmtRatio(val(v.top))}</b>`
+      + `${sw(t.s2)}todas las cuentas <b>${fmtRatio(val(v.glob))}</b>`,
+    whales: `Ballenas: órdenes ≥ ${fmtUsd(current.status && current.status.whales ? current.status.whales.min_usd : null)}`
+      + ` (Binance spot + perp + Coinbase) · neto de la vela <b>${fmtSigned(val(v.wn))}</b>`
+      + `${sw(t.primary)}acumulado <b>${fmtSigned(val(v.wc))}</b>`
+      + (current.data.whales && current.data.whales.t.length ? "" : ` <span class="muted">(sin velas cerradas todavía)</span>`),
+  };
+  const box = document.getElementById("labels");
+  if (!box.children.length) {
+    for (const p of activePanes()) {
+      const el = document.createElement("div");
+      el.className = "pane-label"; el.dataset.key = p.key;
+      box.appendChild(el);
+    }
+  }
+  for (const el of box.children) el.innerHTML = html[el.dataset.key];
+}
+
+function positionLabels() {
+  if (!chart) return;
+  let top = 0;
+  const panes = chart.panes();
+  [...document.getElementById("labels").children].forEach((el, i) => {
+    el.style.top = (top + 6) + "px";
+    top += panes[i].getHeight() + 1;  // 1 px de separador
+  });
+}
+
+// ---------- mapa de liquidez sobre el panel de precio ----------
+// Barras: liquidaciones ESTIMADAS por tramo de 0,5 % (modelo sobre el OI de Binance), dibujadas en un
+// canvas alineado con la escala de precios. Líneas: máximos/mínimos sin barrer y muros del libro.
+const liq = { data: null, lines: [], key: "" };
+// En el celular arranca apagado: en un panel angosto las etiquetas de muros y máximos se pisan
+let liqOn = !MOBILE;
+try { const v = localStorage.getItem("liq"); if (v != null) liqOn = v !== "0"; } catch (e) { /* sin storage: valor por defecto */ }
+document.getElementById("liq-toggle").checked = liqOn;
+document.getElementById("liq-toggle").addEventListener("change", (ev) => {
+  liqOn = ev.target.checked;
+  try { localStorage.setItem("liq", liqOn ? "1" : "0"); } catch (e) { /* nada */ }
+  setLiquidityLines(); liq.key = "";
+});
+
+const fmtM = (usd) => nf(usd >= 1e8 ? 0 : 1).format(usd / 1e6) + " M";
+
+function setLiquidityLines() {
+  for (const l of liq.lines) S.candles.removePriceLine(l);
+  liq.lines = [];
+  const L = liq.data, legend = document.getElementById("liq-legend");
+  legend.hidden = !(liqOn && L);
+  if (!liqOn || !L) return;
+  const t = theme();
+  const add = (price, color, style, width, title) => liq.lines.push(S.candles.createPriceLine({
+    price, color, lineStyle: style, lineWidth: width, axisLabelVisible: true, title }));
+
+  const sp = L.swing_pools || {};
+  for (const g of sp.above || []) add(g.price, t.muted, LWC.LineStyle.Dotted, 1, `máx sin barrer ×${g.touches}`);
+  for (const g of sp.below || []) add(g.price, t.muted, LWC.LineStyle.Dotted, 1, `mín sin barrer ×${g.touches}`);
+
+  // Muros: el mayor de cada lado por exchange, solo si es un muro de verdad (≥ 3 veces un tramo típico)
+  const walls = L.walls || {};
+  for (const [ex, short] of [["binance_spot", "Binance"], ["coinbase", "Coinbase"]]) {
+    for (const side of ["bids", "asks"]) {
+      const w = walls[ex] && walls[ex][side] && walls[ex][side].walls && walls[ex][side].walls[0];
+      if (w && w.x_median >= 3) add(w.price, t.s2, LWC.LineStyle.Solid, 2, `muro ${short} ${nf(1).format(w.usd_m)} M`);
+    }
+  }
+
+  const est = L.estimated || {};
+  legend.innerHTML = est.error
+    ? `Mapa estimado no disponible (${est.error})`
+    : `Liquidaciones <b>estimadas</b> (modelo)<span class="box" style="background:${t.down}"></span>largos`
+      + `<span class="box" style="background:${t.up}"></span>cortos`
+      + `<span class="sw dash" style="border-top-color:${t.muted}"></span>máx/mín sin barrer`
+      + `<span class="sw" style="border-top-color:${t.s2}"></span>muros del libro`
+      + (MOBILE ? "" : ` · <span class="muted">${L.model}; libros ${fmtLocal(L.generated)}</span>`);
+}
+
+function drawLiquidity() {
+  requestAnimationFrame(drawLiquidity);
+  const canvas = document.getElementById("liq-canvas");
+  if (!chart) return;
+  const bins = liqOn && liq.data && liq.data.estimated && liq.data.estimated.bins;
+  const W = chart.timeScale().width(), H = chart.panes()[0].getHeight();
+  const ref = bins && bins.length ? [S.candles.priceToCoordinate(bins[0].price),
+    S.candles.priceToCoordinate(bins[bins.length - 1].price)] : [];
+  // Solo se redibuja si cambió el tamaño, la escala de precios o los datos
+  const key = [!!bins, W, H, ...ref, liq.data && liq.data.generated].join("|");
+  if (key === liq.key) return;
+  liq.key = key;
+
+  const dpr = window.devicePixelRatio || 1;
+  canvas.style.width = W + "px"; canvas.style.height = H + "px";
+  canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  const legend = document.getElementById("liq-legend");
+  legend.style.top = (H - 30) + "px";
+  if (!bins || !bins.length) return;
+
+  const t = theme();
+  const maxUsd = Math.max(...bins.map((b) => b.usd));
+  const maxLen = W * 0.22, half = liq.data.estimated.bin_pct / 200;
+  // los 3 tramos mayores de cada lado llevan el monto
+  const top = new Set();
+  for (const side of ["long", "short"])
+    bins.filter((b) => b.side === side).sort((a, b) => b.usd - a.usd).slice(0, 3).forEach((b) => top.add(b));
+  ctx.font = "11px system-ui, sans-serif";
+  ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  for (const b of bins) {
+    const y1 = S.candles.priceToCoordinate(b.price * (1 + half)), y2 = S.candles.priceToCoordinate(b.price * (1 - half));
+    if (y1 == null || y2 == null || y2 < 0 || y1 > H) continue;
+    const len = (b.usd / maxUsd) * maxLen, h = Math.max(1, y2 - y1 - 1);
+    ctx.globalAlpha = 0.35;
+    ctx.fillStyle = b.side === "long" ? t.down : t.up;
+    ctx.fillRect(W - len, y1, len, h);
+    if (top.has(b)) {
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = t.primary;
+      ctx.fillText(fmtM(b.usd), W - len - 4, (y1 + y2) / 2);
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ---------- perfil de volumen sobre el panel de precio ----------
+// Volumen negociado por nivel de precio en las velas visibles (cada vela reparte su volumen
+// en partes iguales entre su mínimo y su máximo). Se dibuja a la izquierda, con el POC
+// (nivel de mayor volumen) y el área de valor (70 % del volumen alrededor del POC).
+const VP_ROWS = 80, VP_VA = 0.70;
+const VP_NAMES = { both: "spot + perp", spot: "spot", perp: "perp" };
+const vp = { key: "", on: true, source: "both", info: null };
+try {
+  vp.on = localStorage.getItem("vp") !== "0";
+  vp.source = VP_NAMES[localStorage.getItem("vp-source")] ? localStorage.getItem("vp-source") : "both";
+} catch (e) { /* sin storage: valores por defecto */ }
+document.getElementById("vp-toggle").checked = vp.on;
+document.getElementById("vp-source").value = vp.source;
+document.getElementById("vp-toggle").addEventListener("change", (ev) => {
+  vp.on = ev.target.checked; vp.key = "";
+  try { localStorage.setItem("vp", vp.on ? "1" : "0"); } catch (e) { /* nada */ }
+});
+document.getElementById("vp-source").addEventListener("change", (ev) => {
+  vp.source = ev.target.value; vp.key = "";
+  try { localStorage.setItem("vp-source", vp.source); } catch (e) { /* nada */ }
+});
+
+function volumeProfile(c, from, to, source) {
+  let lo = Infinity, hi = -Infinity;
+  for (let i = from; i <= to; i++) { if (c.low[i] < lo) lo = c.low[i]; if (c.high[i] > hi) hi = c.high[i]; }
+  if (!(hi > lo)) return null;
+  const step = (hi - lo) / VP_ROWS, rows = new Float64Array(VP_ROWS);
+  for (let i = from; i <= to; i++) {
+    const v = (source !== "perp" ? c.volume[i] || 0 : 0) + (source !== "spot" && c.perp_volume ? c.perp_volume[i] || 0 : 0);
+    if (!v) continue;
+    const l = c.low[i], h = c.high[i];
+    const a = Math.min(VP_ROWS - 1, Math.floor((l - lo) / step)), b = Math.min(VP_ROWS - 1, Math.floor((h - lo) / step));
+    if (a === b) { rows[a] += v; continue; }
+    const per = v / (h - l);  // volumen por dólar de rango
+    for (let r = a; r <= b; r++) rows[r] += per * (Math.min(h, lo + (r + 1) * step) - Math.max(l, lo + r * step));
+  }
+  let poc = 0, total = 0;
+  for (let r = 0; r < VP_ROWS; r++) { total += rows[r]; if (rows[r] > rows[poc]) poc = r; }
+  if (!total) return null;
+  // Área de valor: se expande desde el POC hacia el lado con más volumen hasta juntar el 70 %
+  let vaLo = poc, vaHi = poc, acc = rows[poc];
+  while (acc < VP_VA * total && (vaLo > 0 || vaHi < VP_ROWS - 1)) {
+    const down = vaLo > 0 ? rows[vaLo - 1] : -1, up = vaHi < VP_ROWS - 1 ? rows[vaHi + 1] : -1;
+    if (up >= down) acc += rows[++vaHi]; else acc += rows[--vaLo];
+  }
+  return { lo, step, rows, poc, vaLo, vaHi };
+}
+
+function drawVolumeProfile() {
+  requestAnimationFrame(drawVolumeProfile);
+  const canvas = document.getElementById("vp-canvas");
+  const c = current.data.candles;
+  if (!chart || !c) return;
+  const W = chart.timeScale().width(), H = chart.panes()[0].getHeight();
+  const lr = chart.timeScale().getVisibleLogicalRange();
+  const n = c.t.length;
+  const from = lr ? Math.max(0, Math.ceil(lr.from)) : 0, to = lr ? Math.min(n - 1, Math.floor(lr.to)) : n - 1;
+  const ref = [S.candles.priceToCoordinate(c.close[n - 1]), S.candles.priceToCoordinate(c.close[n - 1] * 1.01)];
+  // Solo se recalcula si cambian las velas visibles, la escala, el tamaño o los datos
+  const key = [vp.on, vp.source, W, H, from, to, n, c.t[n - 1], ...ref].join("|");
+  if (key === vp.key) return;
+  vp.key = key;
+
+  const dpr = window.devicePixelRatio || 1;
+  canvas.style.width = W + "px"; canvas.style.height = H + "px";
+  canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  const P = vp.on && to > from ? volumeProfile(c, from, to, vp.source) : null;
+  vp.info = null;
+  if (P) {
+    const t = theme();
+    const maxV = Math.max(...P.rows), maxLen = W * 0.25;
+    for (let r = 0; r < VP_ROWS; r++) {
+      const y1 = S.candles.priceToCoordinate(P.lo + (r + 1) * P.step), y2 = S.candles.priceToCoordinate(P.lo + r * P.step);
+      if (y1 == null || y2 == null || y2 < 0 || y1 > H) continue;
+      const inVa = r >= P.vaLo && r <= P.vaHi;
+      ctx.globalAlpha = r === P.poc ? 0.75 : inVa ? 0.4 : 0.18;
+      ctx.fillStyle = r === P.poc ? t.s2 : inVa ? t.s1 : t.muted;
+      ctx.fillRect(0, y1, (P.rows[r] / maxV) * maxLen, Math.max(1, y2 - y1 - 1));
+    }
+    ctx.globalAlpha = 1;
+    vp.info = { poc: P.lo + (P.poc + 0.5) * P.step, val: P.lo + P.vaLo * P.step,
+                vah: P.lo + (P.vaHi + 1) * P.step, candles: to - from + 1 };
+    // POC como línea punteada sobre todo el ancho del panel
+    const yp = S.candles.priceToCoordinate(vp.info.poc);
+    if (yp != null) {
+      ctx.strokeStyle = t.s2; ctx.lineWidth = 1; ctx.setLineDash([4, 3]);
+      ctx.beginPath(); ctx.moveTo(0, Math.round(yp) + 0.5); ctx.lineTo(W, Math.round(yp) + 0.5); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+  renderLabels();
+}
+
+// ---------- estado: tiles y frescura ----------
+function renderStatus(st) {
+  const s = st.snapshot;
+  renderHero(st);
+  const tiles = document.getElementById("tiles");
+  if (!s) { tiles.innerHTML = `<div class="card error">Sin snapshot todavía.</div>`; }
+  else {
+    const snapT = Math.floor(s.timestamp / 1000);
+    const basis = (s.mark_price - s.index_price) / s.index_price;
+    const nextF = new Date(s.next_funding_time).toLocaleTimeString("es-AR", { timeStyle: "short" });
+    const group = (title, items) => `<section class="group"><h2>${title}</h2><div class="tiles">${items.join("")}</div></section>`;
+    tiles.innerHTML = [
+      group("Mercado", [
+        tile("Mark price (perp)", fmtPrice(s.mark_price), [["índice", fmtPrice(s.index_price)], ["basis", fmtPct(basis, 3)]]),
+        tile("Spread spot", nf(4).format(s.spot_spread_bps) + " bps", [["bid", fmtPrice(s.spot_bid)], ["ask", fmtPrice(s.spot_ask)]]),
+        tile("Libro spot ±0,5 %", fmtPct(s.spot_imbalance_05pct, 1),
+          [["compra", fmtUsdM(s.spot_bid_depth_usd_05pct)], ["venta", fmtUsdM(s.spot_ask_depth_usd_05pct)]]),
+        tile("Libro perp ±0,1 %", fmtPct(s.perp_imbalance_01pct, 1),
+          [["compra", fmtUsdM(s.perp_bid_depth_usd_01pct)], ["venta", fmtUsdM(s.perp_ask_depth_usd_01pct)]]),
+      ]),
+      group("Derivados", [
+        tile("Funding estimado", fmtPct(s.est_funding_rate), [["anualizado", fmtPct(s.est_funding_rate * 3 * 365, 1)], ["próximo cobro", nextF]]),
+        tile("Open interest", nf(0).format(s.open_interest) + " BTC", [["en dólares", fmtUsdM(s.open_interest * s.mark_price)]]),
+        liquidationsTile(st.liquidations),
+      ]),
+      group("Flujo y estrategia", [whalesTile(st.whales), strategyTile(st.strategy), ...paperTiles(st.paper)]),
+    ].join("");
+    document.getElementById("updated").textContent =
+      `snapshot ${fmtLocal(snapT)} · datos ${fmtLocal(st.generated)}`;
+  }
+
+  // Una serie está atrasada si su último dato es más viejo que un período
+  // más un ciclo de cron (o el período, si es más largo) y 15 min de margen.
+  const now = Date.now() / 1000;
+  let stale = 0;
+  const rows = st.series.map((r) => {
+    if (r.last == null) { stale++; return `<tr><td>${r.name}</td><td>–</td><td></td><td>${badge(false)}</td></tr>`; }
+    const age = now - r.last;
+    const limit = r.period == null ? Infinity : r.period + Math.max(r.period, CRON_S) + 900;
+    const ok = age <= limit;
+    if (!ok) stale++;
+    return `<tr><td>${r.name}</td><td>${fmtLocal(r.last)}</td><td class="num">${fmtAge(age)}</td><td>${badge(ok)}</td></tr>`;
+  });
+  document.getElementById("fresh-body").innerHTML = rows.join("");
+  document.getElementById("fresh-summary").innerHTML = stale
+    ? `<span class="status"><span class="dot warning"></span>⚠ ${stale} de ${st.series.length} atrasadas</span>`
+    : `<span class="status"><span class="dot good"></span>✓ todas al día</span>`;
+}
+
+// Tarjeta: etiqueta, valor grande y filas "dato — valor" (más fácil de leer que una línea corrida)
+function tile(label, value, rows, cls = "") {
+  const body = (rows || []).map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join("");
+  return `<div class="card tile${cls}"><div class="label">${label}</div><div class="value">${value}</div>`
+    + (body ? `<div class="rows">${body}</div>` : "") + `</div>`;
+}
+
+// ---------- franja de arriba ----------
+const live = { price: null, ticker: null, bar: null, on: false };
+
+function renderHero(st) {
+  const day = live.ticker || (st && st.day);
+  const price = live.price != null ? live.price : day ? day.price : null;
+  const el = document.getElementById("price");
+  const prev = Number(el.dataset.v);
+  el.textContent = fmtPrice(price);
+  if (price != null && prev && price !== prev) {
+    el.classList.remove("tick-up", "tick-down");
+    el.classList.add(price > prev ? "tick-up" : "tick-down");
+    setTimeout(() => el.classList.remove("tick-up", "tick-down"), 250);
+  }
+  el.dataset.v = price == null ? "" : price;
+  if (price != null) document.title = `${nf(0).format(price)} · BTC/USDT`;
+
+  const chg = document.getElementById("chg");
+  if (day) {
+    chg.className = "chg " + (day.change_pct >= 0 ? "up" : "down");
+    chg.textContent = `${day.change_pct >= 0 ? "▲ +" : "▼ −"}${nf(2).format(Math.abs(day.change_pct))} % 24 h`;
+    document.getElementById("day-meta").innerHTML = `<span>máx 24 h <b>${fmtPrice(day.high)}</b></span>`
+      + `<span>mín 24 h <b>${fmtPrice(day.low)}</b></span><span>volumen <b>${fmtVol(day.volume)}</b></span>`;
+  }
+
+  st = st || current.status;
+  if (!st) return;
+  const v = [];
+  const verdict = (k, value, sub, dir) => `<div class="verdict"><div class="k">${k}</div>`
+    + `<div class="v${dir ? " " + dir : ""}">${value}</div><div class="s">${sub}</div></div>`;
+  const e = st.strategy;
+  if (e) {
+    const order = e.action_next_open;
+    v.push(verdict("Estrategia 4h", order ? (order === "buy" ? "COMPRA" : "VENTA") + " en apertura" : e.in_position ? "En posición" : "Afuera",
+      e.in_position ? `stop ${fmtPrice(e.stop)}` : `entra si cierra > ${fmtPrice(e.entry_trigger)}`,
+      order === "buy" || e.in_position ? "up" : order === "sell" ? "down" : ""));
+  }
+  const w = st.whales && (st.whales.windows.find((x) => x.hours === 4) || st.whales.windows[0]);
+  if (w) v.push(verdict("Ballenas 4 h", { comprando: "Comprando", vendiendo: "Vendiendo", neutral: "Neutral" }[w.reading],
+    `neto ${fmtSigned(w.net_usd)}`, w.reading === "comprando" ? "up" : w.reading === "vendiendo" ? "down" : ""));
+  const s = st.snapshot;
+  if (s) v.push(verdict("Funding", fmtPct(s.est_funding_rate * 3 * 365, 1) + " anual",
+    s.est_funding_rate >= 0 ? "pagan los largos" : "pagan los cortos", ""));
+  const c = current.data.candles;
+  if (c) {
+    let fng = null, rsi = null;
+    for (let i = c.t.length - 1; i >= 0 && (fng == null || rsi == null); i--) {
+      if (fng == null && c.fng[i] != null) fng = c.fng[i];
+      if (rsi == null && c.rsi_14[i] != null) rsi = c.rsi_14[i];
+    }
+    if (fng != null) v.push(verdict("Fear & Greed", fmtNum(fng, 0),
+      fng >= 75 ? "codicia extrema" : fng >= 55 ? "codicia" : fng > 45 ? "neutral" : fng > 25 ? "miedo" : "miedo extremo", ""));
+    if (rsi != null) v.push(verdict(`RSI ${current.tf}`, fmtNum(rsi, 1),
+      rsi >= 70 ? "sobrecompra" : rsi <= 30 ? "sobreventa" : "zona media", rsi >= 70 ? "down" : rsi <= 30 ? "up" : ""));
+  }
+  document.getElementById("verdicts").innerHTML = v.join("");
+}
+
+function strategyTile(st) {
+  if (!st) return tile("Estrategia (4h)", "–", [["estado", "sin state.json"]]);
+  const order = st.action_next_open;
+  const value = order ? (order === "buy" ? "COMPRA" : "VENTA") + " en la apertura" : st.in_position ? "En posición" : "Afuera";
+  const rows = st.in_position
+    ? [["stop", `${fmtPrice(st.stop)} (${fmtNum(st.stop_distance_pct, 2)} %)`],
+       ...(st.open_trade ? [["trade", fmtNum(st.open_trade.unrealized_pct, 2) + " %"]] : [])]
+    : [["compra si cierra >", fmtPrice(st.entry_trigger)], ["distancia", "+" + fmtNum(st.entry_trigger_distance_pct, 2) + " %"]];
+  rows.push(["vela", st.last_candle_open_utc.slice(5, 16).replace("T", " ") + " UTC"]);
+  return tile("Estrategia (4h)", value, rows, order ? " alert" : "");
+}
+
+// Paper trading en el perpetuo (estrategia/paper.py): una tarjeta por cuenta
+function paperTiles(p) {
+  if (!p) return [];
+  const exp = (x) => x == null ? "–" : nf(2).format(Math.abs(x)) + "x";
+  const signed = (x) => x == null ? "–" : (x >= 0 ? "+" : "−") + nf(2).format(Math.abs(x)) + " %";
+  const usd0 = (x) => x == null ? "–" : "US$\u00a0" + nf(0).format(x);
+  return Object.entries(p.accounts).map(([key, a]) => {
+    const label = `Paper ${key} (${a.role}) · ${a.name}`;
+    if (p.waiting) return tile(label, "Empieza pronto",
+      [["primera vela", fmtLocal(Date.parse(p.start_utc) / 1000)], ["capital", fmtUsd(p.capital_usd)]]);
+    const pos = a.side ? `${a.side === "long" ? "Largo" : "Corto"} ${exp(a.exposure)}` : "Afuera";
+    const value = a.order ? `${pos} → ${a.order.target_exposure === 0 ? "cerrar" : exp(a.order.target_exposure)}` : pos;
+    const rows = [["capital", `${usd0(a.equity_usd)} (${signed(a.return_pct)})`], ["máx. caída", signed(a.max_dd_pct)],
+      ["comprar y mantener", signed(p.buy_hold_return_pct)], ["funding pagado", usd0(a.funding_paid_usd)]];
+    if (a.side && a.stop != null) rows.push(["stop", fmtPrice(a.stop)]);
+    else if (!a.side && a.entry_trigger != null) rows.push(["entra si cierra >", fmtPrice(a.entry_trigger)]);
+    if (a.order) rows.unshift(["orden", "<b>en la próxima apertura</b>"]);
+    return tile(label, value, rows, a.order ? " alert" : "");
+  });
+}
+
+function liquidationsTile(liq) {
+  const label = "Liquidaciones 24 h (Binance + Bybit)";
+  if (!liq || liq.since == null) return tile(label, "–", [["estado", "sin datos del recolector"]]);
+  const longs = liq.long_usd_24h, shorts = liq.short_usd_24h;
+  return tile(label, fmtUsd(longs + shorts), [["largos", fmtUsd(longs)], ["cortos", fmtUsd(shorts)],
+    ["eventos", nf(0).format(liq.events_24h)], ["registra desde", fmtLocal(liq.since)]]);
+}
+
+// Lectura por ventana: desbalance (compra − venta) / total de órdenes grandes; ±15 % = comprando / vendiendo
+function whalesTile(w) {
+  const label = `<div class="label">Ballenas (órdenes grandes)</div>`;
+  if (!w) return tile("Ballenas (órdenes grandes)", "–", [["estado", "sin datos del recolector"]]);
+  const word = { comprando: "Comprando", vendiendo: "Vendiendo", neutral: "Neutral" };
+  const w4 = w.windows.find((x) => x.hours === 4) || w.windows[0];
+  const arrow = { comprando: "▲", vendiendo: "▼", neutral: "=" };
+  const rows = w.windows.map((x) => [`${x.hours} h ${arrow[x.reading]}`, fmtSigned(x.net_usd)
+    + (x.minutes < x.hours * 60 * 0.9 ? ` <span title="minutos con datos">(${x.minutes} min)</span>` : "")]);
+  const tt = w.top_traders;
+  if (tt) rows.push(["top traders L/S", fmtRatio(tt.ratio)
+    + (tt.change_24h != null ? ` (${tt.change_24h >= 0 ? "+" : "−"}${fmtRatio(Math.abs(tt.change_24h))})` : "")]);
+  return tile("Ballenas (órdenes grandes)", `${word[w4.reading]} <span class="muted">4 h</span>`, rows,
+    w4.reading !== "neutral" ? " alert" : "");
+}
+
+function badge(ok) {
+  return ok
+    ? `<span class="status"><span class="dot good"></span>✓ al día</span>`
+    : `<span class="status"><span class="dot warning"></span>⚠ atrasada</span>`;
+}
+
+// ---------- carga ----------
+async function load(tf, keepView) {
+  try {
+    const [data, st, lq] = await Promise.all([getJSON(`chart_${tf}.json`), getJSON("status.json"),
+      getJSON("liquidity.json").catch(() => null)]);
+    current.tf = tf;
+    liq.data = lq; liq.key = "";
+    current.status = st;
+    setChartData(data, keepView);
+    setStrategyLine(st.strategy);
+    setLiquidityLines();
+    renderStatus(st);
+  } catch (e) {
+    document.getElementById("updated").textContent = "Error cargando datos: " + e.message;
+  }
+}
+
+// Cada 5 min se mira status.json (4 kB). El gráfico (cientos de kB) se vuelve a bajar
+// solo si el cron generó datos nuevos; antes se bajaba entero en cada refresco.
+async function refresh() {
+  try {
+    const st = await getJSON("status.json");
+    if (!current.status || st.generated !== current.status.generated) return load(current.tf, true);
+    current.status = st;
+    renderStatus(st);
+  } catch (e) { /* el próximo intento lo vuelve a probar */ }
+}
+
+// ---------- precio en vivo (WebSocket público de Binance, sin clave) ----------
+// Ticker de 24 h para la franja de arriba y la vela en curso del timeframe elegido.
+// Si no conecta, el panel sigue con los datos del cron y lo dice.
+const WS_URLS = ["wss://stream.binance.com:9443/stream", "wss://data-stream.binance.vision/stream"];
+let ws = null, wsTry = 0, wsTimer = null;
+
+function setLive(on, text) {
+  live.on = on;
+  document.getElementById("live").innerHTML =
+    `<span class="dot ${on ? "live-on" : "live-off"}"></span><span>${text}</span>`;
+}
+
+function connectLive() {
+  clearTimeout(wsTimer);
+  if (ws) { ws.onclose = null; ws.close(); }
+  const url = `${WS_URLS[wsTry % WS_URLS.length]}?streams=btcusdt@ticker/btcusdt@kline_${current.tf}`;
+  let sock;
+  try { sock = new WebSocket(url); } catch (e) { return retryLive(); }
+  ws = sock;
+  sock.onopen = () => { wsTry = 0; setLive(true, "en vivo"); };
+  sock.onmessage = (ev) => {
+    const { stream, data } = JSON.parse(ev.data);
+    if (stream.endsWith("@ticker")) {
+      live.price = +data.c;
+      live.ticker = { price: +data.c, change_pct: +data.P, high: +data.h, low: +data.l, volume: +data.v };
+      renderHero();
+    } else if (data.k && data.k.i === current.tf) {
+      const k = data.k;
+      live.bar = { time: k.t / 1000, open: +k.o, high: +k.h, low: +k.l, close: +k.c, volume: +k.v };
+      applyLiveBar();
+    }
+  };
+  sock.onclose = () => { if (ws === sock) retryLive(); };
+  sock.onerror = () => sock.close();
+}
+
+function retryLive() {
+  wsTry++;
+  setLive(false, "sin conexión en vivo · datos del cron");
+  wsTimer = setTimeout(connectLive, Math.min(30000, 1000 * 2 ** Math.min(wsTry, 5)));
+}
+
+// La vela en curso se suma al final de las del cron (que son todas cerradas)
+function applyLiveBar() {
+  const b = live.bar, c = current.data.candles;
+  if (!b || !c || !S.candles || !c.t.length) return;
+  const last = S.candles.data();
+  if (b.time < c.t[c.t.length - 1] || (last.length && b.time < last[last.length - 1].time)) return;
+  S.candles.update({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close });
+  S.volume.update({ time: b.time, value: b.volume });
+}
+
+document.querySelectorAll(".seg button").forEach((b) => b.addEventListener("click", () => selectTf(b.dataset.tf)));
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => chart && applyTheme());
+
+function selectTf(tf) {
+  document.querySelectorAll(".seg button").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.tf === tf)));
+  history.replaceState(null, "", "#" + tf);
+  live.bar = null;
+  current.tf = tf;
+  load(tf, false);
+  connectLive();
+}
+
+renderPaneChips();
+buildChart();
+requestAnimationFrame(drawLiquidity);
+requestAnimationFrame(drawVolumeProfile);
+selectTf(["1h", "4h", "1d"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "1h");
+setInterval(refresh, REFRESH_MS);
+</script>
+</body>
+</html>

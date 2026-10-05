@@ -1,0 +1,12 @@
+[Unit]
+Description=Captura de liquidaciones BTCUSDT (Binance y Bybit) para claude-cripto
+After=network-online.target
+
+[Service]
+WorkingDirectory=/home/simaf/sbergamin/root/claude-cripto
+ExecStart=/home/simaf/sbergamin/root/claude-cripto/.venv/bin/python liquidations_ws.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
