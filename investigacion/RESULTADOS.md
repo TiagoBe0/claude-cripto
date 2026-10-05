@@ -47,3 +47,24 @@ Falla los criterios 1 (Sharpe ≥ 0,5 en cada mitad) y 2 (caída < 35 %); pasa e
 Lectura: el exceso que se veía en el estudio de eventos (sobre todo del lado largo) no alcanza para pagar costos,
 funding y los cortos en un mercado alcista. Aun con el sesgo a favor de haber mirado la ronda 1, no llega.
 **Descartada sin ir al holdout**, como estaba registrado: no se ajusta y se vuelve a probar.
+
+## Ronda 3 (2026-10-05) · volatilidad gestionada en el perpetuo · NO PASA
+
+`python -m investigacion.ronda3` · reglas registradas antes de correrla (32bc546).
+
+Corrección antes de juzgar: la primera corrida comparaba contra un comprar y mantener del perpetuo **sin
+rebalancear nunca**, que terminaba liquidado en mayo de 2021 (el funding se comía el margen y la exposición subía
+sola a 1,42x). Eso no es "a 1x": se reemplazó por el perpetuo a 1x rebalanceado con la misma banda. Contra el rival
+débil "pasaba"; contra el justo, no.
+
+| | Volatilidad gestionada | Perp 1x rebalanceado | BTC spot |
+|---|---|---|---|
+| A 2020-2022: retorno / Sharpe / caída | +2,7 % / 0,31 / −76 % | +22,6 % / 0,49 / −81 % | +129,8 % / 0,76 / −77 % |
+| B 2023-2025: retorno / Sharpe / caída | +665 % / 1,66 / −32 % | +521 % / 1,59 / −31 % | +637 % / 1,77 / −28 % |
+
+Falla los dos criterios: en A rinde menos que el perpetuo a 1x, y en B mejora el Sharpe apenas (1,66 contra 1,59)
+con una caída algo mayor. La grilla tampoco: 0 de 9 en A, 6 de 9 en B.
+
+**Hallazgo:** en las dos mitades lo mejor es BTC spot. El funding del perpetuo es un costo estructural para quien
+está comprado: en 2020-2022 el mismo BTC dio +130 % en spot y +23 % en el perpetuo. Para exposición compradora,
+el perpetuo no conviene; solo tiene sentido para cortos o para apalancamiento corto en el tiempo.
