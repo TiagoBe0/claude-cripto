@@ -27,3 +27,23 @@ Lectura: hay una pista consistente de **posicionamiento contrario** (ir contra e
 cuentas grandes), pero cada señal sola tiene pocos eventos para separarse del ruido. Cualquier hipótesis de la
 ronda 2 que combine estas señales nace de mirar esta tabla: su resultado en el período de investigación va a ser
 optimista por construcción, y solo el holdout puede confirmarla.
+
+## Ronda 2 (2026-10-05) · posicionamiento contrario combinado · NO PASA
+
+`python -m investigacion.ronda2` · reglas registradas y commiteadas antes de correrla (7f380e5).
+
+| | A 2021-03 → 2022 | B 2023 → 2025-10-04 | Total |
+|---|---|---|---|
+| Retorno | −8,0 % | +11,2 % | +1,7 % |
+| Sharpe | 0,08 | 0,28 | 0,19 |
+| Caída máxima | −34,5 % | −38,5 % | −38,5 % |
+| Trades / aciertos / en mercado | 39 / 46 % / 27 % | 89 / 53 % / 50 % | 128 / 51 % / 41 % |
+| BTC comprar y mantener | −63 %, Sharpe −0,43 | +637 %, Sharpe 1,77 | +171 %, Sharpe 0,67 |
+| Correlación con BTC | +0,08 | −0,13 | −0,02 |
+
+Falla los criterios 1 (Sharpe ≥ 0,5 en cada mitad) y 2 (caída < 35 %); pasa el de robustez (7 de 9 con Sharpe
+> 0 en B, pero todos bajos: entre −0,50 y 0,36). Salidas: 81 por plazo, 32 por señal contraria, 14 por stop.
+
+Lectura: el exceso que se veía en el estudio de eventos (sobre todo del lado largo) no alcanza para pagar costos,
+funding y los cortos en un mercado alcista. Aun con el sesgo a favor de haber mirado la ronda 1, no llega.
+**Descartada sin ir al holdout**, como estaba registrado: no se ajusta y se vuelve a probar.

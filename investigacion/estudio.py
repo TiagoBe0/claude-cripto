@@ -22,10 +22,10 @@ COST = 0.002  # ida y vuelta
 PCT_WINDOW, PCT_MIN = 365, 180
 
 
-def _read(name: str, cols: list[str]) -> pd.DataFrame:
+def _read(name: str, cols: list[str], until: pd.Timestamp | None = HOLDOUT) -> pd.DataFrame:
     df = pd.read_csv(DATA / name, usecols=["timestamp", *cols])
     df.index = pd.to_datetime(df.pop("timestamp"), unit="ms")
-    return df[df.index < HOLDOUT]
+    return df if until is None else df[df.index < until]
 
 
 def pct(s: pd.Series) -> pd.Series:
@@ -40,27 +40,30 @@ def rsi(close: pd.Series, n: int = 14) -> pd.Series:
     return 100 - 100 / (1 + up / down)
 
 
-def daily_frame() -> pd.DataFrame:
-    """Una fila por día D con lo conocido al cierre de D (00:00 UTC de D+1)."""
-    h = _read(f"{SYMBOL}_perp_1h.csv", ["close", "volume", "taker_buy_volume"])
+def daily_frame(until: pd.Timestamp | None = HOLDOUT) -> pd.DataFrame:
+    """Una fila por día D con lo conocido al cierre de D (00:00 UTC de D+1).
+
+    `until=None` incluye el holdout: solo para la corrida final de una estrategia ya cerrada.
+    """
+    h = _read(f"{SYMBOL}_perp_1h.csv", ["close", "volume", "taker_buy_volume"], until)
     full = h.close.resample("1D").count() == 24
     d = pd.DataFrame({"close": h.close.resample("1D").last()})
     d["taker_share_24h"] = h.taker_buy_volume.resample("1D").sum() / h.volume.resample("1D").sum()
 
-    f = _read(f"{SYMBOL}_funding.csv", ["funding_rate"]).funding_rate
+    f = _read(f"{SYMBOL}_funding.csv", ["funding_rate"], until).funding_rate
     f.index = f.index.floor("h")  # a veces vienen con +1 ms
     # Funding conocido al cierre de D: cobros con hora <= D+1 00:00
     known = f.copy()
     known.index = known.index - pd.Timedelta(microseconds=1)  # el cobro de las 00:00 de D+1 cae en D
     d["funding_3d"] = known.rolling("3D").mean().resample("1D").last()
 
-    p = _read(f"{SYMBOL}_premium_1h.csv", ["premium_close"]).premium_close
+    p = _read(f"{SYMBOL}_premium_1h.csv", ["premium_close"], until).premium_close
     m24 = p.resample("1D").mean()
     d["premium_z"] = (m24 - m24.rolling(30, min_periods=20).mean()) / m24.rolling(30, min_periods=20).std()
 
     mp = DATA / f"{SYMBOL}_metrics_5m.csv"
     if mp.exists():
-        m = _read(mp.name, ["open_interest", "global_account_ls_ratio", "top_trader_position_ls_ratio"])
+        m = _read(mp.name, ["open_interest", "global_account_ls_ratio", "top_trader_position_ls_ratio"], until)
         md = m.resample("1D").last()
         d["oi"] = md.open_interest
         d["retail_ls"] = md.global_account_ls_ratio
