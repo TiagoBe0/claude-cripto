@@ -18,8 +18,8 @@ Escribe en <data_dir>/dashboard/:
                                  (los charts llevan además EMA 1200, canal Donchian y stop)
 - lab_4h.json                    velas spot 4h desde 2017 para el laboratorio de backtest del
                                  panel (se baja solo al abrirlo)
-- market.json                    diario: market cap y volumen 24 h de BTC (CoinGecko) y total de
-                                 stablecoins (DefiLlama), con sus cambios día a día
+- market.json                    diario: market cap y volumen 24 h de BTC (CoinGecko) y stablecoins
+                                 (DefiLlama): oferta, emisión neta diaria de USDT y USDC y su percentil
 - regime.json                    lectura de régimen (estrategia/regimen.py): estado de hoy por
                                  factor y qué pasó 7 y 30 días después en días parecidos
 
@@ -378,6 +378,7 @@ def liquidity_data(data_dir: Path) -> dict:
     return out
 
 
+STABLE_STRONG_PCTL = 95  # emisión neta por encima (o quema por debajo de 100 - esto) = día fuerte
 MARKET_DAYS = 400  # lo que viaja al navegador; la API gratis de CoinGecko da 365 días
 
 
@@ -393,17 +394,30 @@ def market_data(data_dir: Path) -> dict | None:
     if mpath.exists():
         parts.append(_read(mpath, ["price_usd", "market_cap_usd", "volume_24h_usd"]))
     if spath.exists():
-        parts.append(_read(spath, ["stablecoins_usd"]))
+        parts.append(_read(spath, ["stablecoins_usd", "usdt", "usdc"]))
     df = pd.concat(parts, axis=1).sort_index()
-    for col in ("price_usd", "market_cap_usd", "volume_24h_usd", "stablecoins_usd"):
+    for col in ("price_usd", "market_cap_usd", "volume_24h_usd", "stablecoins_usd", "usdt", "usdc"):
         if col not in df:
             df[col] = np.nan
     # promedio de 30 días del volumen, para decir si un día movió más o menos que lo normal
     df["volume_avg_30d"] = df.volume_24h_usd.rolling(30, min_periods=20).mean()
+    # Emisión neta (creadas - quemadas) por día. La señal usa USDT + USDC (más del 80 % del total):
+    # el total salta cada vez que DefiLlama empieza a contar una stablecoin nueva.
+    major = df.usdt + df.usdc
+    df["usdt_net"], df["usdc_net"], df["stable_net"] = df.usdt.diff(), df.usdc.diff(), df.stablecoins_usd.diff()
+    df["major_net"] = major.diff()
+    df["major_net_7d"], df["major_net_30d"] = major.diff(7), major.diff(30)
+    # Percentil del día contra los 365 anteriores: Tether emite en bloques, la distribución
+    # tiene colas largas y un desvío estándar exageraría los días comunes.
+    df["major_net_pctl"] = df.major_net.rolling(366, min_periods=90).apply(
+        lambda w: (w[:-1] < w[-1]).mean() * 100 + (w[:-1] == w[-1]).mean() * 50, raw=True)
     df = df.tail(MARKET_DAYS)
     return {"generated": int(time.time()),
             **_columns(df, {"price_usd": 2, "market_cap_usd": 0, "volume_24h_usd": 0,
-                            "volume_avg_30d": 0, "stablecoins_usd": 0})}
+                            "volume_avg_30d": 0, "stablecoins_usd": 0, "usdt_net": 0, "usdc_net": 0,
+                            "stable_net": 0, "major_net": 0, "major_net_7d": 0, "major_net_30d": 0,
+                            "major_net_pctl": 0}),
+            "stable_strong_pctl": STABLE_STRONG_PCTL}
 
 
 def _write(dest: Path, obj: dict) -> None:

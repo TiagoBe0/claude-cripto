@@ -3,7 +3,8 @@
 - fear_greed.csv     Crypto Fear & Greed Index diario (alternative.me), 0 = miedo extremo, 100 = codicia extrema
 - BTC_dvol_1h.csv    DVOL de Deribit: volatilidad implícita anualizada a 30 días de opciones BTC (en %)
 - BTC_market_1d.csv  CoinGecko: precio, market cap y volumen de 24 h de BTC sumando todos los exchanges
-- stablecoins_1d.csv DefiLlama: total de stablecoins atadas al dólar en circulación (US$)
+- stablecoins_1d.csv DefiLlama: stablecoins atadas al dólar en circulación (unidades ≈ US$), total y
+                     USDT y USDC por separado. La diferencia día a día es la emisión neta (creadas − quemadas)
 
 Las dos diarias guardan cada fila con la apertura del día que resumen (como las velas de 1d):
 CoinGecko y DefiLlama publican el dato de las 00:00 UTC, que es el cierre del día anterior.
@@ -25,7 +26,9 @@ DAY = 24 * HOUR
 FNG_COLUMNS = ["timestamp", "datetime_utc", "value", "classification"]
 DVOL_COLUMNS = ["timestamp", "datetime_utc", "open", "high", "low", "close"]
 MARKET_COLUMNS = ["timestamp", "datetime_utc", "price_usd", "market_cap_usd", "volume_24h_usd"]
-STABLE_COLUMNS = ["timestamp", "datetime_utc", "stablecoins_usd"]
+STABLE_COLUMNS = ["timestamp", "datetime_utc", "stablecoins_usd", "usdt", "usdc"]
+# id de DefiLlama de cada stablecoin que se sigue por separado (None = todas)
+STABLE_IDS = {"stablecoins_usd": None, "usdt": 1, "usdc": 2}
 
 
 def _get(url: str, **params) -> dict:
@@ -93,19 +96,22 @@ def update_btc_market(csv_path: Path, coin: str = "bitcoin") -> int:
 
 
 def update_stablecoins(csv_path: Path, start_ms: int) -> int:
+    """Oferta diaria en unidades (no en US$: si una stablecoin se desacopla un poco de 1 dólar, su valor
+    cambia sin que se cree ni se queme nada)."""
     last = last_timestamp(csv_path)
     newest = _closed_day_start(int(time.time() * 1000))
     if last is not None and last >= newest:
         return 0
-    data = _get("https://stablecoins.llama.fi/stablecoincharts/all")
-    rows = []
-    for r in data:
-        day = int(r["date"]) * 1000 - DAY
-        usd = (r.get("totalCirculatingUSD") or {}).get("peggedUSD")
-        if usd is not None and day >= start_ms and (last is None or day > last) and day <= newest:
-            rows.append([day, usd])
+    series = {}
+    for col, sid in STABLE_IDS.items():
+        params = {} if sid is None else {"stablecoin": sid}
+        data = _get("https://stablecoins.llama.fi/stablecoincharts/all", **params)
+        series[col] = {int(r["date"]) * 1000 - DAY: (r.get("totalCirculating") or {}).get("peggedUSD") for r in data}
+    days = sorted(d for d in series["stablecoins_usd"]
+                  if d >= start_ms and (last is None or d > last) and d <= newest)
+    rows = [[d, *(series[col].get(d) for col in STABLE_IDS)] for d in days]
     with Appender(csv_path, STABLE_COLUMNS) as app:
-        app.write(sorted(rows))
+        app.write(rows)
         return app.added
 
 

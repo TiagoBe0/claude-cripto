@@ -74,7 +74,7 @@ Validado contra la librería `ta`: diferencias del orden de 1e-15.
 | `fear_greed.csv` | diaria | `value` 0–100, `classification` |
 | `BTC_dvol_1h.csv` | 1 h | OHLC del DVOL (volatilidad implícita anualizada a 30 días, en %) |
 | `BTC_market_1d.csv` | diaria | CoinGecko: `price_usd`, `market_cap_usd` y `volume_24h_usd` de BTC (todos los exchanges). La API gratis da 365 días hacia atrás |
-| `stablecoins_1d.csv` | diaria | DefiLlama: `stablecoins_usd`, total de stablecoins atadas al dólar |
+| `stablecoins_1d.csv` | diaria | DefiLlama: oferta en unidades (≈ US$) de `stablecoins_usd` (todas las atadas al dólar), `usdt` y `usdc` |
 
 Notas:
 
@@ -139,6 +139,12 @@ Además del gráfico y las tarjetas, `build_dashboard.py` arma:
 - **Dinero en el mercado** (`market.json`): market cap y volumen 24 h de BTC y total de stablecoins, con
   cambios a 1, 7 y 30 días y una tabla día a día de las últimas 2 semanas. El cambio de market cap es
   precio × oferta (no es plata que entra); la emisión de stablecoins es la mejor aproximación gratis.
+- **Emisión de stablecoins**: creadas − quemadas por día de USDT y USDC (cambio de la oferta en unidades, así
+  un desacople del dólar no cuenta como emisión), su percentil contra los 365 días anteriores, sumas de 7 y
+  30 días, racha y barras de los últimos 90 días. **Emisión fuerte** / **quema fuerte** = día en el 5 % extremo
+  del año (`STABLE_STRONG_PCTL` en `build_dashboard.py`). Se mide sobre USDT + USDC y no sobre el total, que
+  salta cuando DefiLlama empieza a contar una stablecoin nueva. Granularidad diaria: el momento exacto de cada
+  emisión requeriría leer las cadenas (Tron, Ethereum) o un servicio pago.
 - **Modelo ML**: tarjeta con `data/ml/prediction.json` (P de movimiento, percentil, evaluación en vivo).
 - **Laboratorio de backtest** (`lab_4h.json`, se baja al abrirlo): la estrategia reescrita en JavaScript (da los
   mismos números que Python), con parámetros a mano y un mapa de sensibilidad del Sharpe por Donchian × stop

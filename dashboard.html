@@ -198,6 +198,10 @@
   .daily table { width: auto; }
   .daily th, .daily td { padding: 2px 10px; font-size: 12px; white-space: nowrap; }
   .daily th { text-align: right; } .daily th:first-child { text-align: left; }
+  .daily .mint { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; margin: 4px 0 6px; }
+  .daily .mint svg { width: 100%; height: 70px; display: block; }
+  .daily .mint .legend { font-size: 11px; color: var(--text-muted); }
+  .daily td.strong { font-weight: 700; }
   .daily .note { margin: 4px 0 0; color: var(--text-muted); font-size: 11px; }
   .regime { padding: 8px 10px; display: grid; gap: 4px; }
   .regime th, .regime td { padding: 2px 8px; font-size: 12px; }
@@ -367,6 +371,7 @@ function fmtUsd(x) {
 function fmtBig(x, signed = false) {
   if (x == null) return "–";
   const a = Math.abs(x), sg = signed ? (x >= 0 ? "+" : "−") : x < 0 ? "−" : "";
+  if (signed && a < 5e5) return "≈\u00a00";
   const [d, u] = a >= 1e12 ? [a / 1e12, "\u00a0T"] : a >= 1e9 ? [a / 1e9, "\u00a0B"] : [a / 1e6, "\u00a0M"];
   return `${sg}US$\u00a0${nf(a >= 1e12 ? 3 : a >= 1e11 ? 1 : 2).format(d)}${u}`;
 }
@@ -1584,10 +1589,48 @@ function marketTiles(m) {
       [["promedio 30 d", fmtBig(avg)], ["vs promedio", avg ? spanSign(v - avg, `${nf(2).format(v / avg)}×`) : "–"],
        ["día anterior", fmtChg(marketChg(m, "volume_24h_usd", 1))]]));
   }
-  if (iS >= 0) out.push(tile(`<span title="DefiLlama: stablecoins atadas al dólar, todas las redes">Stablecoins (US$)</span>`,
-    fmtBig(m.stablecoins_usd[iS]), [["1 d", fmtChg(marketChg(m, "stablecoins_usd", 1))],
-      ["7 d", fmtChg(marketChg(m, "stablecoins_usd", 7))], ["30 d", fmtChg(marketChg(m, "stablecoins_usd", 30))]]));
+  const iN = marketLast(m, "major_net");
+  if (iN >= 0) {
+    const net = m.major_net[iN], q = m.major_net_pctl[iN], strong = stableLevel(q, m.stable_strong_pctl);
+    let streak = 0;  // días seguidos con el mismo signo
+    for (let j = iN; j >= 0 && m.major_net[j] != null && Math.sign(m.major_net[j]) === Math.sign(net); j--) streak++;
+    out.push(tile(`<span title="USDT + USDC (DefiLlama). Creadas − quemadas en el día">Stablecoins</span> <span class="muted">${dayLabel(m.t[iN])}</span>`,
+      spanSign(net, fmtBig(net, true)),
+      [["lectura", strong ? `<b class="${net >= 0 ? "pos" : "neg"}">${strong}</b>` : (net >= 0 ? "se crearon" : "se quemaron")],
+       ["USDT", spanSign(m.usdt_net[iN], fmtBig(m.usdt_net[iN], true))], ["USDC", spanSign(m.usdc_net[iN], fmtBig(m.usdc_net[iN], true))],
+       [`<span title="del día contra los 365 anteriores">percentil 1 año</span>`, q == null ? "–" : nf(0).format(q)],
+       ["7 d", spanSign(m.major_net_7d[iN], fmtBig(m.major_net_7d[iN], true))], ["30 d", spanSign(m.major_net_30d[iN], fmtBig(m.major_net_30d[iN], true))],
+       ["racha", `${streak} ${streak === 1 ? "día" : "días"} ${net >= 0 ? "creando" : "quemando"}`],
+       ["en circulación", fmtBig(m.stablecoins_usd[iS])]],
+      strong ? " alert" : ""));
+  }
   return out.length ? out : [tile("Dinero en el mercado", "–", [["estado", "sin datos"]])];
+}
+
+// Día fuerte: emisión neta en el 5 % más alto del último año (o quema en el 5 % más bajo)
+function stableLevel(q, top) {
+  if (q == null) return null;
+  return q >= top ? "Emisión fuerte" : q <= 100 - top ? "Quema fuerte" : null;
+}
+
+// Barras de emisión neta (USDT + USDC) por día; los días fuertes, con color pleno
+function mintBars(m, days = 90) {
+  const idx = [];
+  for (let i = m.t.length - 1; i >= 0 && idx.length < days; i--) if (m.major_net[i] != null) idx.unshift(i);
+  if (idx.length < 2) return "";
+  const W = 1000, H = 70, mid = H / 2, max = Math.max(...idx.map((i) => Math.abs(m.major_net[i]))) || 1;
+  const bw = W / idx.length;
+  const bars = idx.map((i, k) => {
+    const v = m.major_net[i], h = Math.max(1, Math.abs(v) / max * (mid - 2));
+    const strong = stableLevel(m.major_net_pctl[i], m.stable_strong_pctl);
+    return `<rect x="${(k * bw + bw * 0.15).toFixed(1)}" y="${(v >= 0 ? mid - h : mid).toFixed(1)}" width="${(bw * 0.7).toFixed(1)}" height="${h.toFixed(1)}"`
+      + ` fill="var(${v >= 0 ? "--up" : "--down"})" opacity="${strong ? 1 : 0.4}"><title>${dayLabel(m.t[i])}: ${fmtBig(v, true)}`
+      + `${strong ? " · " + strong : ""}</title></rect>`;
+  }).join("");
+  return `<div class="mint"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Emisión neta diaria de USDT y USDC, ${idx.length} días">`
+    + `<line x1="0" x2="${W}" y1="${mid}" y2="${mid}" stroke="var(--border)"/>${bars}</svg>`
+    + `<div class="legend">Emisión neta diaria USDT + USDC, últimos ${idx.length} días (${dayLabel(m.t[idx[0]])} a ${dayLabel(m.t[idx.at(-1)])}). `
+    + `Arriba azul = se crearon, abajo rojo = se quemaron; color pleno = día fuerte (5 % extremo del año). Barra más alta: ${fmtBig(max)}.</div></div>`;
 }
 
 const DAILY_ROWS = 14;
@@ -1603,14 +1646,21 @@ function renderDaily(m) {
     rows.push(`<tr><td>${dayLabel(m.t[i])}</td><td class="num">${fmtPrice(m.price_usd[i])}</td><td class="num">${pc(f("price_usd"))}</td>`
       + `<td class="num">${fmtBig(m.market_cap_usd[i])}</td><td class="num">${d("market_cap_usd") == null ? "–" : spanSign(d("market_cap_usd"), fmtBig(d("market_cap_usd"), true))}</td>`
       + `<td class="num">${fmtBig(v)}</td><td class="num">${v != null && avg ? spanSign(v - avg, nf(2).format(v / avg) + "×") : "–"}</td>`
-      + `<td class="num">${fmtBig(m.stablecoins_usd[i])}</td><td class="num">${d("stablecoins_usd") == null ? "–" : spanSign(d("stablecoins_usd"), fmtBig(d("stablecoins_usd"), true))}</td></tr>`);
+      + `<td class="num">${m.usdt_net[i] == null ? "–" : spanSign(m.usdt_net[i], fmtBig(m.usdt_net[i], true))}</td>`
+      + `<td class="num">${m.usdc_net[i] == null ? "–" : spanSign(m.usdc_net[i], fmtBig(m.usdc_net[i], true))}</td>`
+      + (() => { const st = stableLevel(m.major_net_pctl[i], m.stable_strong_pctl), v = m.major_net[i];
+          return `<td class="num${st ? " strong" : ""}">${v == null ? "–" : spanSign(v, fmtBig(v, true))}</td>`
+            + `<td class="num${st ? " strong" : ""}">${m.major_net_pctl[i] == null ? "–" : nf(0).format(m.major_net_pctl[i])}${st ? (v >= 0 ? " ▲" : " ▼") : ""}</td>`; })()
+      + `</tr>`);
   }
-  card.innerHTML = `<h2>Día a día <span class="muted">· días UTC cerrados, el más nuevo arriba</span></h2>`
+  card.innerHTML = `<h2>Día a día <span class="muted">· días UTC cerrados, el más nuevo arriba</span></h2>` + mintBars(m)
     + `<div class="scroll-x"><table><thead><tr><th>Día</th><th>Cierre</th><th>Δ precio</th><th>Market cap BTC</th><th>Δ market cap</th>`
-    + `<th>Volumen 24 h</th><th>vs prom. 30 d</th><th>Stablecoins</th><th>Δ stablecoins</th></tr></thead><tbody>${rows.join("")}</tbody></table></div>`
+    + `<th>Volumen 24 h</th><th>vs prom. 30 d</th><th>Emisión USDT</th><th>Emisión USDC</th><th>USDT + USDC</th>`
+    + `<th title="emisión neta del día contra los 365 anteriores; ▲▼ = día fuerte">percentil</th></tr></thead><tbody>${rows.join("")}</tbody></table></div>`
     + `<p class="note">Δ market cap ≈ Δ precio × BTC en circulación: muestra cuánto cambió la valuación, no cuánta plata entró `
-    + `(poca plata puede mover mucho el precio). Dólares que entran a cripto: mejor mirar las stablecoins (se emiten cuando `
-    + `entra dinero y se queman cuando sale) junto con el volumen. Fuentes: CoinGecko (precio, market cap, volumen de todos los exchanges) y DefiLlama.</p>`;
+    + `(poca plata puede mover mucho el precio). Dólares que entran a cripto: mejor mirar la emisión de stablecoins (se crean cuando `
+    + `alguien deposita dólares en Tether o Circle y se queman cuando los retira) junto con el volumen. Emisión = cambio de la oferta `
+    + `en unidades; Tether suele emitir en bloques grandes, así que USDT puede quedar plano varios días y después saltar. Fuentes: CoinGecko (precio, market cap, volumen de todos los exchanges) y DefiLlama.</p>`;
   card.hidden = false;
 }
 
