@@ -21,7 +21,12 @@
   },
   "trading": {
     "symbol": "BTC/USDT",
-    "max_order_usdt": 100
+    "max_order_usdt": 100,
+    "ejecutor": {
+      "enabled": true,
+      "real": false,
+      "capital_usdt": 1000
+    }
   },
   "paper": {
     "start": "2026-10-04T16:00:00Z",

@@ -888,7 +888,7 @@ function renderStatus(st) {
         tile("Open interest", nf(0).format(s.open_interest) + " BTC", [["en dólares", fmtUsdM(s.open_interest * s.mark_price)]]),
         liquidationsTile(st.liquidations),
       ]),
-      group("Flujo y estrategia", [whalesTile(st.whales), strategyTile(st.strategy), ...paperTiles(st.paper)]),
+      group("Flujo y estrategia", [whalesTile(st.whales), strategyTile(st.strategy), ...executorTile(st.executor), ...paperTiles(st.paper)]),
     ].join("");
     document.getElementById("updated").textContent =
       `snapshot ${fmtLocal(snapT)} · datos ${fmtLocal(st.generated)}`;
@@ -987,6 +987,19 @@ function strategyTile(st) {
     : [["compra si cierra >", fmtPrice(st.entry_trigger)], ["distancia", "+" + fmtNum(st.entry_trigger_distance_pct, 2) + " %"]];
   rows.push(["vela", st.last_candle_open_utc.slice(5, 16).replace("T", " ") + " UTC"]);
   return tile("Estrategia (4h)", value, rows, order ? " alert" : "");
+}
+
+// Ejecutor (estrategia/ejecutor.py): la estrategia 4h operando de verdad en Binance spot (testnet o real)
+function executorTile(e) {
+  if (!e) return [];
+  const signed = (x) => x == null ? "–" : (x >= 0 ? "+" : "−") + nf(2).format(Math.abs(x)) + " %";
+  const p = e.position;
+  const rows = [["capital", `US$\u00a0${nf(2).format(e.equity_usdt)} (${signed(e.return_pct)})`]];
+  if (p) rows.push(["entrada", fmtPrice(p.entry_price)], ["stop en Binance", p.stop_price ? fmtPrice(p.stop_price) : "tras el cierre de la vela"]);
+  if (e.last_trade) rows.push(["último trade", `${signed(e.last_trade.ret_pct)} · ${e.last_trade.reason}`]);
+  rows.push(["trades", nf(0).format(e.n_trades)]);
+  if (e.last_event) rows.push(["último evento", `${e.last_event.text} (${fmtLocal(e.last_event.t)})`]);
+  return [tile(`Ejecutor Binance ${e.real ? "· CUENTA REAL" : "testnet"}`, p ? `En posición ${p.qty} BTC` : "Afuera", rows, e.real ? " alert" : "")];
 }
 
 // Paper trading en el perpetuo (estrategia/paper.py): una tarjeta por cuenta

@@ -236,6 +236,14 @@ def status_data(data_dir: Path) -> dict:
     paper_path = data_dir / "estrategia" / "paper.json"
     if paper_path.exists():
         paper = json.loads(paper_path.read_text())
+    executor = None
+    ex_path = data_dir / "trading" / "ejecutor.json"
+    if ex_path.exists():
+        e = json.loads(ex_path.read_text())
+        executor = {k: e.get(k) for k in ("real", "capital_usdt", "equity_usdt", "return_pct", "position", "updated")}
+        executor["last_trade"] = e["trades"][-1] if e.get("trades") else None
+        executor["n_trades"] = len(e.get("trades") or [])
+        executor["last_event"] = e["events"][-1] if e.get("events") else None
     liq = None
     liq_path = data_dir / f"{SYMBOL}_liquidations.csv"
     if liq_path.exists() and liq_path.stat().st_size > 0:
@@ -245,7 +253,7 @@ def status_data(data_dir: Path) -> dict:
                "long_usd_24h": round(float(w.usd[w.side == "long"].sum()), 2),
                "short_usd_24h": round(float(w.usd[w.side == "short"].sum()), 2)}
     return {"generated": int(time.time()), "series": series, "snapshot": snap,
-            "strategy": strategy, "paper": paper, "liquidations": liq, "whales": whale_status(data_dir),
+            "strategy": strategy, "paper": paper, "executor": executor, "liquidations": liq, "whales": whale_status(data_dir),
             "day": day_stats(data_dir)}
 
 

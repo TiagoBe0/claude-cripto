@@ -31,6 +31,7 @@ import futures_data
 from estrategia.live_signal import update as update_strategy
 from estrategia.paper import update as update_paper
 from indicators import write_indicators
+from ml.build_dataset import update as update_ml_dataset
 from storage import Appender, export_json, last_timestamp
 
 COLUMNS = ["timestamp", "datetime_utc", "open", "high", "low", "close", "volume"]
@@ -163,6 +164,35 @@ def main() -> None:
         except Exception:
             failed += 1
             log.exception("paper: falló la simulación")
+    if (mcfg := cfg.get("ml")) is not None:
+        try:
+            log.info("ml: dataset -> %s", update_ml_dataset(data_dir, mcfg))
+        except Exception:
+            failed += 1
+            log.exception("ml: falló al armar el dataset")
+    if mcfg and (h := mcfg.get("live_horizon")):
+        try:
+            from ml.live_model import update as update_ml_model  # importa lightgbm: solo si está configurado
+
+            pr = update_ml_model(data_dir, h, mcfg.get("threshold_pct", {}).get(str(h)))
+            log.info("ml: vela %s, P(movimiento %dh) %.0f %% (percentil %.0f), P(long) %.0f %%, P(short) %.0f %%",
+                     pr["candle_open_utc"], h, pr["p_move"] * 100, pr["p_move_pctile_90d"],
+                     pr["p_long"] * 100, pr["p_short"] * 100)
+        except Exception:
+            failed += 1
+            log.exception("ml: falló la predicción en vivo")
+    if (ecfg := cfg.get("trading", {}).get("ejecutor", {})).get("enabled"):
+        try:
+            from estrategia.ejecutor import update as update_executor
+
+            ej = update_executor(data_dir, ecfg)
+            pos = ej["position"]
+            log.info("ejecutor (%s): %s, capital %s USDT (%+.2f %%)", "REAL" if ej["real"] else "testnet",
+                     f"{pos[qty]} BTC, stop {pos[stop_price]}" if pos else "afuera",
+                     ej["equity_usdt"], ej["return_pct"])
+        except Exception:
+            failed += 1
+            log.exception("ejecutor: falló")
     # Después de la estrategia: status.json lee state.json y paper.json recién calculados
     if cfg.get("dashboard", False):
         try:

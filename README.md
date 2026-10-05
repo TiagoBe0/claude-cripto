@@ -313,3 +313,16 @@ real se usa solo con `--real`, y ahí cada orden pide escribir `REAL` para salir
 - Antes de enviar valida mínimo de Binance, paso de cantidad y precio, y avisa si un límite está a más
   de 10 % del mercado o cruza el libro.
 - Cada orden enviada queda en `data/trading/ordenes.jsonl`.
+
+### Ejecutor automático (`estrategia/ejecutor.py`)
+
+La estrategia 4h (`live_signal.py`) operando sola en Binance spot, dentro de la corrida horaria del cron.
+Config en `config.json` → `trading.ejecutor`: `enabled`, `real` (por defecto `false` = testnet) y
+`capital_usdt` (subcuenta virtual: compra con ese capital, no con el saldo entero).
+
+- Compra / vende a mercado con la orden de la vela (una sola vez por vela) y deja un `STOP_LOSS` en
+  Binance al stop vigente, que se mueve cuando sube. El stop salta en el momento, sin esperar al cron.
+- Si la estrategia queda afuera y el ejecutor no, vende; al revés no entra tarde: espera una señal nueva.
+- Con `state.json` viejo no manda órdenes (el stop ya puesto sigue protegiendo).
+- Estado en `data/trading/ejecutor.json`, órdenes en `data/trading/ordenes.jsonl`, aviso por correo de cada
+  compra y venta, y tarjeta en el dashboard. A mano: `.venv/bin/python -m estrategia.ejecutor [--estado]`.
