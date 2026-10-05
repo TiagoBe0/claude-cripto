@@ -1,8 +1,16 @@
 {
-  "symbols": ["BTC/USDT"],
-  "timeframes": ["1h", "4h", "1d"],
+  "symbols": [
+    "BTC/USDT"
+  ],
+  "timeframes": [
+    "1h",
+    "4h",
+    "1d"
+  ],
   "start_date": "2024-01-01",
-  "spot_start_dates": {"4h": "2017-08-17"},
+  "spot_start_dates": {
+    "4h": "2017-08-17"
+  },
   "data_dir": "data",
   "export_json": true,
   "indicators": true,
@@ -15,31 +23,40 @@
     "metrics_5m": true,
     "snapshot": true
   },
-  "strategy": {
-    "symbol": "BTCUSDT",
-    "timeframe": "4h"
-  },
   "trading": {
     "symbol": "BTC/USDT",
     "max_order_usdt": 100,
     "ejecutor": {
-      "enabled": true,
+      "enabled": false,
       "real": false,
       "capital_usdt": 1000
     }
   },
-  "paper": {
-    "start": "2026-10-04T16:00:00Z",
-    "capital": 10000
-  },
   "ml": {
     "symbol": "BTCUSDT",
-    "horizons": [4, 24],
-    "threshold_pct": {"4": 0.5, "24": 1.5},
+    "horizons": [
+      4,
+      24
+    ],
+    "threshold_pct": {
+      "4": 0.5,
+      "24": 1.5
+    },
     "live_horizon": 4
   },
   "external": {
     "fear_greed": true,
     "deribit_dvol": true
+  },
+  "pausado": {
+    "motivo": "Estrategias Donchian/momentum descartadas el 2026-10-05: no le ganan a comprar y mantener desde 2023. Para reactivar, volver a poner estas claves en la raíz.",
+    "strategy": {
+      "symbol": "BTCUSDT",
+      "timeframe": "4h"
+    },
+    "paper": {
+      "start": "2026-10-04T16:00:00Z",
+      "capital": 10000
+    }
   }
 }

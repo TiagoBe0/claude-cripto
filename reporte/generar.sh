@@ -17,7 +17,7 @@ CLAUDE="${CLAUDE_BIN:-$HOME/.local/bin/claude}"
 PY=.venv/bin/python
 mkdir -p "$OUT"
 
-state() { "$PY" -c "import json; print(json.load(open('data/estrategia/state.json'))['$1'] or '')"; }
+state() { "$PY" -c "import json; print(json.load(open('data/estrategia/state.json'))['$1'] or '')" 2>/dev/null || true; }
 # Exposición objetivo de la orden pendiente de la cuenta paper C (vacío si no hay o no existe paper.json)
 orden_paper() {
     "$PY" -c "import json; o = json.load(open('data/estrategia/paper.json'))['accounts']['C'].get('order'); print('' if o is None else o['target_exposure'])" 2>/dev/null || true

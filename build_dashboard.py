@@ -12,6 +12,14 @@ Escribe en <data_dir>/dashboard/:
                                  y lectura de ballenas (comprando / vendiendo)
 - liquidity.json                 mapa de liquidez (reporte/liquidez.py): liquidaciones
                                  estimadas por tramo, máximos/mínimos sin barrer y muros
+- strategy.json                  estrategia 4h (estrategia/backtest.py): trades desde 2018,
+                                 curva de capital contra comprar y mantener, métricas
+                                 dentro y fuera de muestra y trades del ejecutor
+                                 (los charts llevan además EMA 1200, canal Donchian y stop)
+- lab_4h.json                    velas spot 4h desde 2017 para el laboratorio de backtest del
+                                 panel (se baja solo al abrirlo)
+- regime.json                    lectura de régimen (estrategia/regimen.py): estado de hoy por
+                                 factor y qué pasó 7 y 30 días después en días parecidos
 
 Los JSON van por columna ({"t": [...], "close": [...]}) en segundos UTC,
 mucho más livianos que los JSON fila por fila que exporta storage.py.
@@ -29,6 +37,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from estrategia import backtest, regimen
 from reporte import liquidez
 import whale_trades_ws
 from storage import last_timestamp
@@ -74,7 +83,49 @@ def _columns(df: pd.DataFrame, digits: dict[str, int]) -> dict:
     return out
 
 
-def chart_data(data_dir: Path, tf: str) -> dict:
+# Períodos de evaluación: los mismos que imprime estrategia/backtest.py
+STRATEGY_PERIODS = [("in-sample 2018-2022", "2018-01-01", "2023-01-01"),
+                    ("out-of-sample 2023-hoy", "2023-01-01", None),
+                    ("total 2018-hoy", "2018-01-01", None)]
+
+
+def strategy_frame(data_dir: Path) -> tuple[pd.DataFrame, dict]:
+    """Velas spot 4h desde 2017 con las líneas de la estrategia y la simulación completa.
+
+    ema y don se conocen al cierre de su vela; stop es el que está vigente DURANTE la vela
+    (fijado al cierre de la anterior), NaN sin posición.
+    """
+    # Índice sin zona horaria (UTC implícito), como en backtest.py: simulate() compara contra fechas sin zona
+    df = pd.read_csv(data_dir / f"{SYMBOL}_4h.csv")
+    df.index = pd.to_datetime(df.pop("timestamp"), unit="ms")
+    entry, exit_, stop = backtest.signals(df, **backtest.PARAMS)
+    sim = backtest.simulate(df, entry, exit_, stop, start="2018-01-01")
+    p = backtest.PARAMS
+    lines = pd.DataFrame({
+        "strat_ema": df.close.ewm(span=p["ema_len"], adjust=False, min_periods=p["ema_len"]).mean(),
+        "strat_don": df.high.rolling(p["don_len"]).max().shift(),
+        "strat_stop": sim["trails"].shift(),
+    }, index=df.index)
+    return df.join(lines), {"sim": sim, "signals": (entry, exit_, stop)}
+
+
+def strategy_lines(frame: pd.DataFrame, tf: str, grid: pd.DatetimeIndex) -> pd.DataFrame:
+    """Lleva las líneas de 4h a la grilla del gráfico sin mirar el futuro."""
+    lines = frame[["strat_ema", "strat_don", "strat_stop"]].tz_localize("UTC")
+    if tf == "4h":
+        return lines.reindex(grid)
+    if tf == "1h":
+        # ema y don recién se conocen al cierre de la vela de 4h; el stop rige durante ella
+        known = lines[["strat_ema", "strat_don"]].copy()
+        known.index = known.index + pd.Timedelta(hours=4)
+        out = known.reindex(grid, method="ffill", limit=3)
+        out["strat_stop"] = lines.strat_stop.reindex(grid, method="ffill", limit=3)
+        return out
+    # 1d: el valor al cierre del día (el stop, el vigente en la última vela de 4h del día)
+    return lines.resample("1D").last().reindex(grid)
+
+
+def chart_data(data_dir: Path, tf: str, strat: pd.DataFrame | None = None) -> dict:
     rule = {"1h": "1h", "4h": "4h", "1d": "1D"}[tf]
     candles = _read(data_dir / f"{SYMBOL}_{tf}.csv", ["open", "high", "low", "close", "volume"])
     ind = _read(data_dir / f"{SYMBOL}_{tf}_indicators.csv",
@@ -111,6 +162,11 @@ def chart_data(data_dir: Path, tf: str) -> dict:
     # cerrada para no mostrar la hora (o el día) en curso.
     derivs = derivs[derivs.index <= candles.index[-1]]
 
+    strat_cols = {}
+    if strat is not None:
+        candles = candles.join(strategy_lines(strat, tf, candles.index))
+        strat_cols = {"strat_ema": 2, "strat_don": 2, "strat_stop": 2}
+
     if HISTORY_DAYS[tf]:
         start = candles.index[-1] - pd.Timedelta(days=HISTORY_DAYS[tf])
         candles = candles[candles.index >= start]
@@ -123,11 +179,49 @@ def chart_data(data_dir: Path, tf: str) -> dict:
         "candles": _columns(candles, {"open": 2, "high": 2, "low": 2, "close": 2,
                                       "volume": 3, "perp_volume": 3, "sma_50": 2, "sma_200": 2, "rsi_14": 2,
                                       "macd": 2, "macd_signal": 2, "macd_hist": 2,
-                                      "rv_30d": 2, "dvol": 2, "fng": 0}),
+                                      "rv_30d": 2, "dvol": 2, "fng": 0, **strat_cols}),
         "derivs": _columns(derivs, {"funding_rate": 8, "open_interest_usd": 0,
                                     "top_trader_position_ls_ratio": 4, "global_account_ls_ratio": 4}),
         "whales": None if whales is None else _columns(whales, {c: 0 for c in whales.columns}),
     }
+
+
+def _iso(ts) -> str:
+    return pd.Timestamp(ts).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _num(x, nd: int):
+    return None if x is None or pd.isna(x) else round(float(x), nd)
+
+
+def strategy_data(data_dir: Path, frame: pd.DataFrame, extra: dict) -> dict:
+    sim = extra["sim"]
+    close = frame.close
+    trades = [{"entry_t": _iso(t["entry_time"]), "entry_price": _num(t["entry_price"], 2),
+               "exit_t": _iso(t["exit_time"]) if "exit_time" in t else None,
+               "exit_price": _num(t.get("exit_price"), 2), "reason": t.get("exit_reason"),
+               "ret_pct": _num(t["ret"] * 100, 2) if "ret" in t else
+               _num((close.iloc[-1] * (1 - backtest.COST) / (t["entry_price"] * (1 + backtest.COST)) - 1) * 100, 2)}
+              for t in sim["trades"]]
+    # Curva diaria (base 100) de la estrategia y de comprar y mantener desde el mismo inicio
+    curve = sim["curve"].resample("1D").last().dropna()
+    bh = close[close.index >= curve.index[0]].resample("1D").last().reindex(curve.index)
+    bh = bh / close[close.index >= sim["curve"].index[0]].iloc[0]
+    dd = curve / curve.cummax() - 1
+    metrics = []
+    for name, start, end in STRATEGY_PERIODS:
+        m = backtest.period_stats(frame, *extra["signals"], start=start, end=end)
+        metrics.append({"period": name, **{k: _num(v, 4) for k, v in m.items()}})
+    executor = None
+    ex_path = data_dir / "trading" / "ejecutor.json"
+    if ex_path.exists():
+        e = json.loads(ex_path.read_text())
+        executor = {"real": e.get("real"), "trades": e.get("trades") or [], "position": e.get("position")}
+    return {"params": backtest.PARAMS, "cost_per_side": backtest.COST, "trades": trades,
+            "curve": {"t": curve.index.as_unit("s").astype("int64").tolist(),
+                      "strategy": [round(float(v) * 100, 2) for v in curve],
+                      "buy_hold": [_num(v * 100, 2) for v in bh], "drawdown": [round(float(v) * 100, 2) for v in dd]},
+            "metrics": metrics, "executor": executor}
 
 
 def _whale_minutes(data_dir: Path) -> pd.DataFrame | None:
@@ -236,9 +330,13 @@ def status_data(data_dir: Path) -> dict:
     paper_path = data_dir / "estrategia" / "paper.json"
     if paper_path.exists():
         paper = json.loads(paper_path.read_text())
+    ml = None
+    ml_path = data_dir / "ml" / "prediction.json"
+    if ml_path.exists():
+        ml = json.loads(ml_path.read_text())
     executor = None
     ex_path = data_dir / "trading" / "ejecutor.json"
-    if ex_path.exists():
+    if ex_path.exists() and _config().get("trading", {}).get("ejecutor", {}).get("enabled"):
         e = json.loads(ex_path.read_text())
         executor = {k: e.get(k) for k in ("real", "capital_usdt", "equity_usdt", "return_pct", "position", "updated")}
         executor["last_trade"] = e["trades"][-1] if e.get("trades") else None
@@ -253,7 +351,7 @@ def status_data(data_dir: Path) -> dict:
                "long_usd_24h": round(float(w.usd[w.side == "long"].sum()), 2),
                "short_usd_24h": round(float(w.usd[w.side == "short"].sum()), 2)}
     return {"generated": int(time.time()), "series": series, "snapshot": snap,
-            "strategy": strategy, "paper": paper, "executor": executor, "liquidations": liq, "whales": whale_status(data_dir),
+            "strategy": strategy, "paper": paper, "executor": executor, "ml": ml, "liquidations": liq, "whales": whale_status(data_dir),
             "day": day_stats(data_dir)}
 
 
@@ -282,11 +380,37 @@ def _write(dest: Path, obj: dict) -> None:
     tmp.replace(dest)
 
 
+def _config() -> dict:
+    path = Path(__file__).with_name("config.json")
+    return json.loads(path.read_text()) if path.exists() else {}
+
+
 def build(data_dir: Path) -> Path:
     out_dir = data_dir / "dashboard"
     out_dir.mkdir(exist_ok=True)
+    strat = extra = None
+    # La estrategia 4h (Donchian) va al panel solo si está activa en config.json ("strategy" en la raíz;
+    # pausada, queda bajo "pausado"). Si no, se borran sus archivos para no servir datos congelados.
+    if "strategy" in _config():
+        try:
+            strat, extra = strategy_frame(data_dir)
+        except (OSError, KeyError, ValueError) as e:  # sin velas 4h: los gráficos salen igual, sin la estrategia
+            print(f"estrategia: {type(e).__name__}: {e}")
+    else:
+        for name in ("strategy.json", "lab_4h.json"):
+            (out_dir / name).unlink(missing_ok=True)
     for tf in PERIOD_S:
-        _write(out_dir / f"chart_{tf}.json", chart_data(data_dir, tf))
+        _write(out_dir / f"chart_{tf}.json", chart_data(data_dir, tf, strat))
+    if strat is not None:
+        _write(out_dir / "strategy.json", strategy_data(data_dir, strat, extra))
+        lab = strat[["open", "high", "low", "close"]]
+        _write(out_dir / "lab_4h.json", {"params": backtest.PARAMS, "cost_per_side": backtest.COST,
+                                         "t": lab.index.as_unit("s").astype("int64").tolist(),
+                                         **{k[0]: lab[k].round(2).tolist() for k in lab.columns}})
+    try:
+        _write(out_dir / "regime.json", regimen.regime(data_dir))
+    except (OSError, KeyError, ValueError) as e:
+        print(f"régimen: {type(e).__name__}: {e}")
     _write(out_dir / "status.json", status_data(data_dir))
     _write(out_dir / "liquidity.json", liquidity_data(data_dir))
     return out_dir

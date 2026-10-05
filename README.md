@@ -122,6 +122,23 @@ systemctl --user disable --now cripto-dashboard  # desinstalar
   típico). Sale de `data/dashboard/liquidity.json`, que usa las mismas funciones que el reporte (`reporte/liquidez.py`)
   y se regenera en cada corrida del cron.
 
+### Análisis en el panel
+
+Además del gráfico y las tarjetas, `build_dashboard.py` arma:
+
+- **Estrategia en el gráfico** (`strategy.json` + columnas `strat_*` de los charts): EMA 1200, canal Donchian 120
+  y stop trailing de la estrategia 4h sobre el precio, flechas de cada trade del backtest con su resultado y marcas
+  de los trades del ejecutor. Tarjeta de rendimiento: curva de capital contra comprar y mantener desde 2018, caída,
+  métricas dentro y fuera de muestra (las mismas de `estrategia/backtest.py`) y últimos trades.
+- **Lectura de régimen** (`regime.json`, `estrategia/regimen.py`): estado de hoy en tendencia, momentum, RSI,
+  volatilidad y distancia al máximo (desde 2017) y en Fear & Greed, funding y open interest (desde 2024), con el
+  retorno 7 y 30 días después en días con el mismo estado contra la base, y si la diferencia se sostiene en
+  2018-2022 y 2023-hoy. A mano: `.venv/bin/python estrategia/regimen.py`.
+- **Modelo ML**: tarjeta con `data/ml/prediction.json` (P de movimiento, percentil, evaluación en vivo).
+- **Laboratorio de backtest** (`lab_4h.json`, se baja al abrirlo): la estrategia reescrita en JavaScript (da los
+  mismos números que Python), con parámetros a mano y un mapa de sensibilidad del Sharpe por Donchian × stop
+  dentro y fuera de muestra, para ver si un resultado es robusto o un pico de sobreajuste.
+
 ## Automatizar con cron
 
 `crontab -e` y agregar (corre 2 minutos después de cada hora):

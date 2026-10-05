@@ -32,6 +32,7 @@
     --ov-whales: #3f51b5;
     --ov-vol: #8d5a2b;
     --ov-fng: #607d8b;
+    --strat: #6f4fd8;     /* estrategia 4h: EMA 1200, canal Donchian, curva de capital */
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
@@ -57,6 +58,7 @@
       --ov-whales: #8c9eff;
       --ov-vol: #c99a6b;
       --ov-fng: #a0b4bf;
+      --strat: #a08cff;
     }
   }
   :root[data-theme="dark"] {
@@ -82,9 +84,11 @@
     --ov-whales: #8c9eff;
     --ov-vol: #c99a6b;
     --ov-fng: #a0b4bf;
+    --strat: #a08cff;
   }
 
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }  /* que ningún display de clase le gane a hidden */
   body {
     margin: 0;
     background: var(--surface-0);
@@ -174,6 +178,39 @@
   .sw { display: inline-block; width: 14px; height: 0; border-top: 2px solid; vertical-align: middle; margin: 0 4px 0 8px; }
   .sw.dash { border-top-style: dashed; }
 
+  .perf { padding: 14px; display: grid; gap: 12px; }
+  .perf h2 { font-size: 15px; margin: 0; font-weight: 600; }
+  .perf .note { color: var(--text-secondary); font-size: 13px; margin: 0; max-width: 900px; }
+  .perf-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; align-items: start; }
+  #perf-chart { position: relative; height: 320px; }
+  .perf-legend { font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
+  .perf table td, .perf table th { padding: 5px 8px; }
+  .perf .tables { display: grid; gap: 12px; }
+  .scroll-x { overflow-x: auto; }
+  .pos { color: var(--up); } .neg { color: var(--down); }
+  @media (max-width: 900px) { .perf-grid { grid-template-columns: 1fr; } }
+  .regime { padding: 14px; display: grid; gap: 10px; }
+  .regime h2 { font-size: 15px; margin: 0; font-weight: 600; }
+  .regime .lead { margin: 0; font-size: 14px; max-width: 1000px; }
+  .regime .note { margin: 0; color: var(--text-muted); font-size: 12px; max-width: 1000px; }
+  .regime td.state { font-weight: 600; }
+  .regime tr.sub th { color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; padding-top: 12px; }
+  .regime tr.base td { color: var(--text-muted); }
+  .holds { font-weight: 600; }
+  .lab { padding: 0; }
+  .lab .body { padding: 0 14px 14px; display: grid; gap: 12px; }
+  .lab form { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: end; }
+  .lab label { display: grid; gap: 2px; font-size: 12px; color: var(--text-secondary); }
+  .lab input { font: inherit; width: 96px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--surface-1); color: var(--text-primary); }
+  .lab button { font: inherit; padding: 6px 14px; border-radius: 8px; border: 1px solid var(--text-secondary);
+    background: var(--text-primary); color: var(--surface-1); cursor: pointer; min-height: 34px; }
+  .lab button.secondary { background: var(--surface-1); color: var(--text-primary); border-color: var(--border); }
+  .lab .warn { margin: 0; font-size: 13px; color: var(--text-secondary); max-width: 1000px; }
+  #lab-chart { position: relative; height: 280px; }
+  .heat td, .heat th { text-align: center; padding: 4px 6px; font-size: 12px; }
+  .heat td.cur { outline: 2px solid var(--text-primary); outline-offset: -2px; font-weight: 700; }
+  .heats { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
   details.card { padding: 0; }
   details summary { padding: 12px 14px; cursor: pointer; display: flex; gap: 12px; align-items: center; }
   table { border-collapse: collapse; width: 100%; font-size: 13px; }
@@ -210,6 +247,8 @@
 
   <div class="groups" id="tiles" aria-label="Último snapshot"></div>
 
+  <section class="card regime" id="regime" aria-label="Lectura de régimen" hidden></section>
+
   <div class="toolbar">
     <div class="seg" role="group" aria-label="Timeframe">
       <button data-tf="1h" aria-pressed="true">1h</button>
@@ -221,12 +260,44 @@
         <option value="both">spot + perp</option><option value="spot">spot</option><option value="perp">perp</option>
       </select></label>
     <label class="toggle"><input type="checkbox" id="liq-toggle" checked> Mapa de liquidez</label>
+    <label class="toggle" id="strat-toggle-label" hidden><input type="checkbox" id="strat-toggle" checked> Estrategia 4h</label>
     <span class="spacer"></span>
     <span class="muted" id="updated">cargando…</span>
     <span class="muted">Eje en UTC</span>
   </div>
   <div class="chips" id="pane-chips" role="group" aria-label="Paneles del gráfico"></div>
   <div class="chips" id="overlay-chips" role="group" aria-label="Indicadores sobre el precio"></div>
+
+  <details class="card lab" id="lab" hidden>
+    <summary><b>Laboratorio de backtest</b><span class="muted">la estrategia 4h con otros parámetros, en el navegador</span></summary>
+    <div class="body">
+      <p class="warn">Sirve para entender la estrategia, no para elegir los parámetros que mejor dan: si se eligen mirando
+        2023-hoy, ese período deja de ser "fuera de muestra" y el resultado se vuelve optimista. Mirá el mapa de
+        sensibilidad: una estrategia sana rinde parecido con parámetros vecinos, no solo en un punto.</p>
+      <form id="lab-form">
+        <label>EMA de tendencia <input name="ema_len" type="number" min="10" max="3000" step="10"></label>
+        <label>Donchian (velas) <input name="don_len" type="number" min="5" max="1000" step="5"></label>
+        <label>ATR (velas) <input name="atr_len" type="number" min="2" max="200" step="1"></label>
+        <label>Stop (× ATR) <input name="atr_mult" type="number" min="0.5" max="20" step="0.5"></label>
+        <label>Costo por lado (%) <input name="cost" type="number" min="0" max="2" step="0.01"></label>
+        <button type="submit">Probar</button>
+        <button type="button" class="secondary" id="lab-reset">Valores de la estrategia</button>
+        <span class="muted" id="lab-status"></span>
+      </form>
+      <div class="perf-grid">
+        <div>
+          <div class="perf-legend" id="lab-legend"></div>
+          <div id="lab-chart"></div>
+        </div>
+        <div class="scroll-x"><table id="lab-metrics"></table></div>
+      </div>
+      <div>
+        <div class="perf-legend">Mapa de sensibilidad: Sharpe por largo del Donchian (filas) y stop en ATR (columnas),
+          con la EMA y el costo de arriba. El recuadro es la combinación elegida.</div>
+        <div class="heats" id="lab-heat"></div>
+      </div>
+    </div>
+  </details>
 
   <details class="card" id="freshness">
     <summary><b>Estado de las series</b><span id="fresh-summary" class="muted"></span></summary>
@@ -242,6 +313,23 @@
     <canvas id="liq-canvas"></canvas>
     <div id="labels"></div>
     <div class="liq-legend" id="liq-legend" hidden></div>
+  </section>
+
+  <section class="card perf" id="perf" aria-label="Rendimiento de la estrategia" hidden>
+    <div>
+      <h2 id="perf-title">Estrategia 4h</h2>
+      <p class="note" id="perf-note"></p>
+    </div>
+    <div class="perf-grid">
+      <div>
+        <div class="perf-legend" id="perf-legend"></div>
+        <div id="perf-chart"></div>
+      </div>
+      <div class="tables">
+        <div class="scroll-x"><table id="perf-metrics"></table></div>
+        <div class="scroll-x"><table id="perf-trades"></table></div>
+      </div>
+    </div>
   </section>
 </main>
 
@@ -423,6 +511,14 @@ function buildChart() {
     priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }, 0);
   S.sma200 = chart.addSeries(LWC.LineSeries, { priceFormat: usd, lineWidth: 2,
     priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }, 0);
+  // Estrategia 4h: EMA 1200 (filtro de tendencia), canal Donchian 120 (precio a superar) y stop trailing
+  const quiet = { priceFormat: usd, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false };
+  S.stratEma = chart.addSeries(LWC.LineSeries, { ...quiet, lineWidth: 2 }, 0);
+  S.stratDon = chart.addSeries(LWC.LineSeries, { ...quiet, lineWidth: 1, lineStyle: LWC.LineStyle.Dotted,
+    lineType: LWC.LineType.WithSteps }, 0);
+  S.stratStop = chart.addSeries(LWC.LineSeries, { ...quiet, lineWidth: 2, lineStyle: LWC.LineStyle.Dashed,
+    lineType: LWC.LineType.WithSteps }, 0);
+  S.markers = LWC.createSeriesMarkers(S.candles, []);
   const num1 = { type: "custom", minMove: 0.1, formatter: (p) => nf(1).format(p) };
   const num0 = { type: "custom", minMove: 1, formatter: (p) => nf(0).format(p) };
   const volPct = { type: "custom", minMove: 0.1, formatter: (p) => nf(0).format(p) + "%" };
@@ -478,6 +574,14 @@ function applyTheme() {
     borderDownColor: t.down, wickUpColor: t.up, wickDownColor: t.down });
   S.sma50.applyOptions({ color: t.muted });
   S.sma200.applyOptions({ color: t.primary });
+  const strat = css("--strat");
+  for (const k of ["stratEma", "stratDon", "stratStop"]) S[k].applyOptions({ visible: stratOn });
+  S.stratEma.applyOptions({ color: strat });
+  S.stratDon.applyOptions({ color: strat });
+  S.stratStop.applyOptions({ color: t.down });
+  setStrategyMarkers();
+  renderPerformance();
+  if (lab.chart) { labChart(); if (lab.data) labHeat(labParams()); }
   // Sobre el precio cada indicador lleva su color (la segunda línea, punteada); en su panel, los de siempre
   const col = (key, fallback) => isOverlay(key) ? css(`--ov-${key}`) : fallback;
   S.volume.applyOptions({ color: isOverlay("volume") ? alpha(t.volume, 0.6) : t.volume });
@@ -502,6 +606,20 @@ function applyTheme() {
 function line(t, ys) {
   const out = [];
   for (let i = 0; i < t.length; i++) if (ys[i] != null) out.push({ time: t[i], value: ys[i] });
+  return out;
+}
+
+// Como line(), pero los huecos quedan como huecos (sin posición no hay stop). El gráfico une los puntos
+// por encima de los espacios en blanco, así que el hueco lleva el último valor en color transparente.
+function gappedLine(t, ys) {
+  if (!ys) return [];
+  const out = [];
+  let last = ys.find((y) => y != null);
+  if (last == null) return [];
+  for (let i = 0; i < t.length; i++) {
+    if (ys[i] != null) { last = ys[i]; out.push({ time: t[i], value: ys[i] }); }
+    else out.push({ time: t[i], value: last, color: "rgba(0,0,0,0)" });
+  }
   return out;
 }
 
@@ -571,9 +689,14 @@ function setChartData(data, keepView) {
     vol.push({ time: c.t[i], value: c.volume[i] });
   }
   current.data = data;
+  current.tIndex = new Map(c.t.map((x, i) => [x, i]));
   S.candles.setData(candles);
   S.sma50.setData(line(c.t, c.sma_50));
   S.sma200.setData(line(c.t, c.sma_200));
+  S.stratEma.setData(c.strat_ema ? line(c.t, c.strat_ema) : []);
+  S.stratDon.setData(c.strat_don ? line(c.t, c.strat_don) : []);
+  S.stratStop.setData(gappedLine(c.t, c.strat_stop));
+  setStrategyMarkers();
   S.volume.setData(vol);
   setFunding(d);
   S.oi.setData(line(d.t, d.open_interest_usd));
@@ -610,10 +733,19 @@ function valuesAt(param) {
   };
   return {
     c: pick(S.candles), s50: pick(S.sma50), s200: pick(S.sma200), v: pick(S.volume),
+    se: pick(S.stratEma), sd: pick(S.stratDon), ss: pick(S.stratStop),
     f: pick(S.funding), oi: pick(S.oi), top: pick(S.lsTop), glob: pick(S.lsGlobal),
     rsi: pick(S.rsi), mh: pick(S.macdHist), m: pick(S.macd), ms: pick(S.macdSignal),
     dvol: pick(S.dvol), rv: pick(S.rv), fng: pick(S.fng), wn: pick(S.whaleNet), wc: pick(S.whaleCum),
   };
+}
+
+// El stop vigente en la vela del cursor (o en la última), leído de los datos: la serie rellena los huecos
+function stopAt(param) {
+  const c = current.data.candles;
+  if (!c || !c.strat_stop) return null;
+  const i = param && param.time !== undefined ? current.tIndex.get(param.time) : c.t.length - 1;
+  return i == null ? null : c.strat_stop[i];
 }
 
 function renderLabels(param) {
@@ -628,6 +760,11 @@ function renderLabels(param) {
   const html = {
     price: `Precio spot ${c ? `A <b>${fmtPrice(c.open)}</b> M <b>${fmtPrice(c.high)}</b> m <b>${fmtPrice(c.low)}</b> C <b>${fmtPrice(c.close)}</b>` : ""}`
       + `${sw(t.muted, true)}SMA 50 <b>${fmtPrice(val(v.s50))}</b>${sw(t.primary)}SMA 200 <b>${fmtPrice(val(v.s200))}</b>`
+      + (stratOn && current.data.candles && current.data.candles.strat_ema
+        ? `<br>Estrategia 4h${sw(css("--strat"))}EMA 1200 <b>${fmtPrice(val(v.se))}</b>`
+          + `${sw(css("--strat"), true)}Donchian 120 <b>${fmtPrice(val(v.sd))}</b>`
+          + `${sw(t.down, true)}stop <b>${stopAt(param) == null ? "sin posición" : fmtPrice(stopAt(param))}</b>`
+          + ` <span class="muted">▲ compra ▼ venta · ● ejecutor</span>` : "")
       + (vp.info ? `<br>Perfil de volumen ${VP_NAMES[vp.source]} (${nf(0).format(vp.info.candles)} velas visibles)`
         + `${sw(t.s2, true)}POC <b>${fmtPrice(vp.info.poc)}</b>`
         + `<span class="box" style="background:${t.s1}"></span>área de valor 70 % <b>${fmtPrice(vp.info.val)}</b> – <b>${fmtPrice(vp.info.vah)}</b>` : ""),
@@ -668,6 +805,446 @@ function positionLabels() {
     el.style.top = (top + 6) + "px";
     top += panes[i].getHeight() + 1;  // 1 px de separador
   });
+}
+
+// ---------- estrategia 4h: marcadores y rendimiento ----------
+let stratOn = true;
+try { const v = localStorage.getItem("strat"); if (v != null) stratOn = v !== "0"; } catch (e) { /* sin storage */ }
+document.getElementById("strat-toggle").checked = stratOn;
+document.getElementById("strat-toggle").addEventListener("change", (ev) => {
+  stratOn = ev.target.checked;
+  try { localStorage.setItem("strat", stratOn ? "1" : "0"); } catch (e) { /* nada */ }
+  applyTheme();
+});
+
+// Un instante ISO llevado a la vela del timeframe que lo contiene (las de 1h y 4h caen justo; las de 1d al día)
+function barTime(iso, tf) {
+  const s = Date.parse(iso) / 1000;
+  const p = { "1h": 3600, "4h": 14400, "1d": 86400 }[tf];
+  return Math.floor(s / p) * p;
+}
+
+function setStrategyMarkers() {
+  if (!S.markers) return;
+  const st = current.strategy, c = current.data.candles;
+  if (!stratOn || !st || !c || !c.t.length) { S.markers.setMarkers([]); return; }
+  const t = theme(), first = c.t[0], tf = current.tf, out = [];
+  const pct = (x) => x == null ? "" : (x >= 0 ? "+" : "−") + nf(1).format(Math.abs(x)) + " %";
+  for (const tr of st.trades) {
+    const a = barTime(tr.entry_t, tf);
+    if (a >= first) out.push({ time: a, position: "belowBar", shape: "arrowUp", color: t.up, text: "" });
+    if (tr.exit_t) {
+      const b = barTime(tr.exit_t, tf);
+      if (b >= first) out.push({ time: b, position: "aboveBar", shape: "arrowDown", color: tr.ret_pct >= 0 ? t.up : t.down,
+        text: pct(tr.ret_pct) });
+    }
+  }
+  const ex = st.executor;
+  if (ex) {
+    for (const tr of ex.trades) {
+      for (const [iso, pos] of [[tr.entry_time, "belowBar"], [tr.exit_time, "aboveBar"]]) {
+        const b = iso && barTime(iso, tf);
+        if (b && b >= first) out.push({ time: b, position: pos, shape: "circle", color: css("--strat"), text: "" });
+      }
+    }
+    if (ex.position && ex.position.entry_time) {
+      const b = barTime(ex.position.entry_time, tf);
+      if (b >= first) out.push({ time: b, position: "belowBar", shape: "circle", color: css("--strat"), text: "ejecutor" });
+    }
+  }
+  // Solo velas que existen en el gráfico (la de un trade del ejecutor puede ser la que todavía no cerró)
+  const bars = S.candles.data(), last = bars.length ? bars[bars.length - 1].time : c.t[c.t.length - 1];
+  S.markers.setMarkers(out.filter((x) => x.time <= last).sort((x, y) => x.time - y.time));
+}
+
+let perfChart = null, perfS = {};
+function renderPerformance() {
+  const st = current.strategy, card = document.getElementById("perf");
+  card.hidden = !st;
+  if (!st) return;
+  const t = theme(), strat = css("--strat");
+  const p = st.params;
+  document.getElementById("perf-title").textContent =
+    `Estrategia 4h · Donchian ${p.don_len} + EMA ${p.ema_len} + stop ${nf(0).format(p.atr_mult)} ATR, solo compras`;
+  const m = Object.fromEntries(st.metrics.map((x) => [x.period, x]));
+  const oos = m["out-of-sample 2023-hoy"], ins = m["in-sample 2018-2022"];
+  const pc = (x, d = 1) => x == null ? "–" : nf(d).format(x * 100) + " %";
+  // La lectura honesta: contra qué se compara y qué gana o pierde
+  document.getElementById("perf-note").innerHTML = oos && ins
+    ? `Backtest con costo de ${nf(2).format(st.cost_per_side * 100)} % por lado. Hasta 2022 rindió <b>${pc(ins.cagr)}</b> anual contra `
+      + `${pc(ins.bh_cagr)} de comprar y mantener; desde 2023 (datos que no se usaron para elegirla) rinde <b>${pc(oos.cagr)}</b> contra `
+      + `<b>${pc(oos.bh_cagr)}</b>. Lo que sí sostiene en los dos períodos es la caída máxima: `
+      + `${pc(oos.max_dd, 0)} contra ${pc(oos.bh_max_dd, 0)}. Gana menos en mercados alcistas a cambio de perder mucho menos en los bajistas.`
+    : "";
+  const row = (label, f) => `<tr><th>${label}</th>${st.metrics.map((x) => `<td class="num">${f(x)}</td>`).join("")}</tr>`;
+  document.getElementById("perf-metrics").innerHTML =
+    `<thead><tr><th></th>${st.metrics.map((x) => `<th class="num">${x.period}</th>`).join("")}</tr></thead><tbody>`
+    + row("Retorno anual", (x) => pc(x.cagr))
+    + row("Comprar y mantener", (x) => pc(x.bh_cagr))
+    + row("Caída máxima", (x) => pc(x.max_dd, 0))
+    + row("Caída máx. comprar y mantener", (x) => pc(x.bh_max_dd, 0))
+    + row("Sharpe", (x) => fmtNum(x.sharpe, 2))
+    + row("Trades", (x) => fmtNum(x.trades, 0))
+    + row("Aciertos", (x) => pc(x.win_rate, 0))
+    + row("Profit factor", (x) => fmtNum(x.profit_factor, 2)) + "</tbody>";
+  const recent = st.trades.slice(-8).reverse();
+  const sign = (x) => x == null ? "–" : `<span class="${x >= 0 ? "pos" : "neg"}">${x >= 0 ? "+" : "−"}${nf(2).format(Math.abs(x))} %</span>`;
+  const day = (iso) => iso ? iso.slice(0, 10) : "abierto";
+  document.getElementById("perf-trades").innerHTML =
+    `<thead><tr><th>Entrada</th><th>Salida</th><th class="num">Precio</th><th>Motivo</th><th class="num">Resultado</th></tr></thead><tbody>`
+    + recent.map((x) => `<tr><td>${day(x.entry_t)}</td><td>${day(x.exit_t)}</td>`
+      + `<td class="num">${fmtPrice(x.entry_price)} → ${x.exit_price ? fmtPrice(x.exit_price) : "–"}</td>`
+      + `<td>${x.reason || "en curso"}</td><td class="num">${sign(x.ret_pct)}</td></tr>`).join("") + "</tbody>";
+
+  // Curva de capital (escala logarítmica, base 100) y caída desde el máximo
+  if (!perfChart) {
+    perfChart = LWC.createChart(document.getElementById("perf-chart"), {
+      autoSize: true, handleScroll: { vertTouchDrag: false },
+      rightPriceScale: { mode: LWC.PriceScaleMode.Logarithmic },
+      // ~3.200 días en unos 800 px: con el mínimo por defecto (0,5 px por barra) no entra toda la historia
+      timeScale: { timeVisible: false, minBarSpacing: 0.05 }, localization: { locale: "es-AR" },
+      layout: { panes: { enableResize: false } },
+    });
+    const n0 = { type: "custom", minMove: 1, formatter: (x) => nf(0).format(x) };
+    perfS.bh = perfChart.addSeries(LWC.LineSeries, { lineWidth: 1, priceFormat: n0, priceLineVisible: false, lastValueVisible: false });
+    perfS.strat = perfChart.addSeries(LWC.LineSeries, { lineWidth: 2, priceFormat: n0, priceLineVisible: false });
+    perfS.dd = perfChart.addSeries(LWC.AreaSeries, { lineWidth: 1, priceLineVisible: false,
+      priceFormat: { type: "custom", minMove: 0.1, formatter: (x) => nf(0).format(x) + " %" } }, 1);
+    perfChart.panes()[1].setStretchFactor(0.35);
+    perfChart.subscribeCrosshairMove((param) => perfLegend(param));
+    // Toda la historia a la vista: se reajusta cuando el gráfico toma su ancho (nace dentro de una tarjeta oculta)
+    perfChart.timeScale().subscribeSizeChange(() => perfChart.timeScale().fitContent());
+  }
+  perfChart.applyOptions({
+    layout: { background: { type: "solid", color: t.surface }, textColor: t.text, fontSize: 11,
+              panes: { separatorColor: t.border } },
+    grid: { vertLines: { color: t.grid }, horzLines: { color: t.grid } },
+    rightPriceScale: { borderColor: t.border }, timeScale: { borderColor: t.border },
+  });
+  perfS.strat.applyOptions({ color: strat });
+  perfS.bh.applyOptions({ color: t.muted });
+  perfS.dd.applyOptions({ lineColor: t.down, topColor: alpha(t.down, 0.05), bottomColor: alpha(t.down, 0.35),
+    invertFilledArea: true });
+  const cv = st.curve;
+  if (perfS.key !== cv.t[cv.t.length - 1]) {
+    perfS.strat.setData(line(cv.t, cv.strategy));
+    perfS.bh.setData(line(cv.t, cv.buy_hold));
+    perfS.dd.setData(line(cv.t, cv.drawdown));
+    perfChart.timeScale().fitContent();
+    perfS.key = cv.t[cv.t.length - 1];
+  }
+  perfLegend();
+}
+
+function perfLegend(param) {
+  const st = current.strategy;
+  if (!st || !perfS.strat) return;
+  const pick = (s) => {
+    if (param && param.time !== undefined) return param.seriesData.get(s);
+    const d = s.data(); return d[d.length - 1];
+  };
+  const v = (s) => { const x = pick(s); return x && x.value != null ? x.value : null; };
+  const t = theme(), sw = (c, d) => `<span class="sw${d ? " dash" : ""}" style="border-top-color:${c}"></span>`;
+  const when = param && param.time !== undefined ? fmtLocal(param.time).split(",")[0] : "hoy";
+  document.getElementById("perf-legend").innerHTML = `US$ 100 invertidos en 2018, ${when}:`
+    + `${sw(css("--strat"))}estrategia <b>${fmtNum(v(perfS.strat), 0)}</b>`
+    + `${sw(t.muted)}comprar y mantener <b>${fmtNum(v(perfS.bh), 0)}</b>`
+    + `${sw(t.down)}caída de la estrategia <b>${fmtNum(v(perfS.dd), 0)} %</b>`;
+}
+
+// ---------- laboratorio de backtest: estrategia/backtest.py en JavaScript ----------
+// Misma lógica y mismas convenciones: señal al cierre de t, orden en la apertura de t+1, stop trailing
+// fijado al cierre y activo en la vela siguiente, ejecutado a min(apertura, stop).
+const LAB_PERIODS = [["in-sample 2018-2022", "2018-01-01", "2023-01-01"], ["out-of-sample 2023-hoy", "2023-01-01", null],
+  ["total 2018-hoy", "2018-01-01", null]];
+const lab = { data: null, chart: null, S: {}, defaults: null };
+
+function emaArr(x, n, alphaOf) {
+  const out = new Float64Array(x.length).fill(NaN), a = alphaOf(n);
+  let y = NaN;
+  for (let i = 0; i < x.length; i++) {
+    y = i === 0 ? x[0] : a * x[i] + (1 - a) * y;
+    if (i >= n - 1) out[i] = y;  // min_periods = n
+  }
+  return out;
+}
+
+function labSignals(d, p) {
+  const n = d.c.length;
+  const trend = emaArr(d.c, p.ema_len, (k) => 2 / (k + 1));
+  const tr = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    tr[i] = i === 0 ? d.h[i] - d.l[i]
+      : Math.max(d.h[i] - d.l[i], Math.abs(d.h[i] - d.c[i - 1]), Math.abs(d.l[i] - d.c[i - 1]));
+  }
+  const atr = emaArr(tr, p.atr_len, (k) => 1 / k);
+  // Máximo de las don_len velas ANTERIORES (rolling(n).max().shift()), con una cola monótona
+  const don = new Float64Array(n).fill(NaN), q = [];
+  for (let i = 0; i < n; i++) {
+    if (i >= p.don_len) don[i] = d.h[q[0]];
+    while (q.length && d.h[q[q.length - 1]] <= d.h[i]) q.pop();
+    q.push(i);
+    if (q[0] <= i - p.don_len) q.shift();
+  }
+  const entry = new Uint8Array(n), exit = new Uint8Array(n), stop = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    entry[i] = d.c[i] > don[i] && d.c[i] > trend[i];
+    exit[i] = d.c[i] < trend[i];
+    stop[i] = d.c[i] - p.atr_mult * atr[i];
+  }
+  return { entry, exit, stop };
+}
+
+function labSimulate(d, sig, cost, start, end) {
+  const t0 = Date.parse(start + "T00:00:00Z") / 1000, t1 = end ? Date.parse(end + "T00:00:00Z") / 1000 : Infinity;
+  let cash = 1, qty = 0, trail = NaN, pending = null;
+  const ct = [], cv = [], trades = [];
+  const closeTrade = (price) => {
+    const tr = trades[trades.length - 1];
+    tr.ret = price * (1 - cost) / (tr.entry * (1 + cost)) - 1;
+    tr.closed = true;
+    return qty * price * (1 - cost);
+  };
+  let last = -1;
+  for (let i = 0; i < d.t.length; i++) {
+    if (d.t[i] < t0 || d.t[i] >= t1) continue;
+    const o = d.o[i];
+    if (pending === "buy") { qty = cash / (o * (1 + cost)); cash = 0; trail = NaN; trades.push({ entry: o }); }
+    else if (pending === "sell") { cash = closeTrade(o); qty = 0; }
+    pending = null;
+    if (qty > 0 && !isNaN(trail) && d.l[i] <= trail) { cash = closeTrade(Math.min(o, trail)); qty = 0; }
+    if (qty > 0) {
+      if (!isNaN(sig.stop[i])) trail = isNaN(trail) ? sig.stop[i] : Math.max(trail, sig.stop[i]);
+      if (sig.exit[i]) pending = "sell";
+    } else {
+      trail = NaN;
+      if (sig.entry[i]) pending = "buy";
+    }
+    ct.push(d.t[i]); cv.push(cash + qty * d.c[i]); last = i;
+  }
+  // una posición abierta se valúa como si se vendiera al último cierre del período
+  const rets = trades.map((x) => x.closed ? x.ret : d.c[last] * (1 - cost) / (x.entry * (1 + cost)) - 1);
+  return { t: ct, v: cv, rets, first: d.t.indexOf(ct[0]), last };
+}
+
+function labStats(d, sim) {
+  const { t, v, rets } = sim;
+  const yrs = Math.floor((t[t.length - 1] - t[0]) / 86400) / 365.25;
+  // Sharpe con el último valor de cada día UTC, como resample("1D").last()
+  const daily = [];
+  let day = null;
+  for (let i = 0; i < t.length; i++) {
+    const k = Math.floor(t[i] / 86400);
+    if (k !== day) { daily.push(v[i]); day = k; } else daily[daily.length - 1] = v[i];
+  }
+  const r = [];
+  for (let i = 1; i < daily.length; i++) r.push(daily[i] / daily[i - 1] - 1);
+  const mean = r.reduce((a, b) => a + b, 0) / r.length;
+  const sd = Math.sqrt(r.reduce((a, b) => a + (b - mean) ** 2, 0) / (r.length - 1));
+  const maxDD = (xs) => { let peak = -Infinity, dd = 0; for (const x of xs) { peak = Math.max(peak, x); dd = Math.min(dd, x / peak - 1); } return dd; };
+  const closes = d.c.slice(sim.first, sim.last + 1);
+  const gains = rets.filter((x) => x > 0).reduce((a, b) => a + b, 0), losses = -rets.filter((x) => x <= 0).reduce((a, b) => a + b, 0);
+  return { cagr: v[v.length - 1] ** (1 / yrs) - 1, max_dd: maxDD(v), sharpe: mean / sd * Math.sqrt(365), trades: rets.length,
+    win_rate: rets.length ? rets.filter((x) => x > 0).length / rets.length : NaN, profit_factor: losses ? gains / losses : NaN,
+    bh_cagr: (closes[closes.length - 1] / closes[0]) ** (1 / yrs) - 1, bh_max_dd: maxDD(closes) };
+}
+
+function labParams() {
+  const f = new FormData(document.getElementById("lab-form"));
+  return { ema_len: +f.get("ema_len"), don_len: +f.get("don_len"), atr_len: +f.get("atr_len"), atr_mult: +f.get("atr_mult"),
+    cost: +f.get("cost") / 100 };
+}
+
+function labFill(p) {
+  const form = document.getElementById("lab-form");
+  for (const k of ["ema_len", "don_len", "atr_len", "atr_mult"]) form.elements[k].value = p[k];
+  form.elements.cost.value = +(p.cost * 100).toFixed(4);
+}
+
+async function labOpen() {
+  if (lab.data) return;
+  document.getElementById("lab-status").textContent = "bajando velas 4h desde 2017…";
+  try {
+    lab.data = await getJSON("lab_4h.json");
+  } catch (e) {
+    document.getElementById("lab-status").textContent = "No se pudieron bajar las velas: " + e.message;
+    return;
+  }
+  lab.defaults = { ...lab.data.params, cost: lab.data.cost_per_side };
+  labFill(lab.defaults);
+  labRun();
+}
+
+function labRun() {
+  const d = lab.data, p = labParams();
+  if (!d) return;
+  const bad = !(p.ema_len >= 2 && p.don_len >= 2 && p.atr_len >= 2 && p.atr_mult > 0 && p.cost >= 0);
+  if (bad) { document.getElementById("lab-status").textContent = "Revisá los valores."; return; }
+  const t0 = performance.now();
+  const sig = labSignals(d, p);
+  const rows = LAB_PERIODS.map(([name, a, b]) => ({ name, ...labStats(d, labSimulate(d, sig, p.cost, a, b)) }));
+  const ref = lab.defaults, refSig = labSignals(d, ref);
+  const refRows = LAB_PERIODS.map(([, a, b]) => labStats(d, labSimulate(d, refSig, ref.cost, a, b)));
+  const pc = (x, dg = 1) => x == null || isNaN(x) ? "–" : nf(dg).format(x * 100) + " %";
+  const num = (x, dg = 2) => x == null || isNaN(x) ? "–" : nf(dg).format(x);
+  const same = ["ema_len", "don_len", "atr_len", "atr_mult", "cost"].every((k) => p[k] === ref[k]);
+  const row = (label, f, g) => `<tr><th>${label}</th>${rows.map((x, i) => `<td class="num">${f(x)}`
+    + (same || !g ? "" : `<br><span class="muted">${g(refRows[i])}</span>`) + "</td>").join("")}</tr>`;
+  document.getElementById("lab-metrics").innerHTML =
+    `<thead><tr><th>${same ? "" : `<span class="muted">gris: valores de la estrategia</span>`}</th>`
+    + rows.map((x) => `<th class="num">${x.name}</th>`).join("") + `</tr></thead><tbody>`
+    + row("Retorno anual", (x) => pc(x.cagr), (x) => pc(x.cagr))
+    + row("Comprar y mantener", (x) => pc(x.bh_cagr))
+    + row("Caída máxima", (x) => pc(x.max_dd, 0), (x) => pc(x.max_dd, 0))
+    + row("Sharpe", (x) => num(x.sharpe), (x) => num(x.sharpe))
+    + row("Trades", (x) => num(x.trades, 0), (x) => num(x.trades, 0))
+    + row("Aciertos", (x) => pc(x.win_rate, 0), (x) => pc(x.win_rate, 0))
+    + row("Profit factor", (x) => num(x.profit_factor), (x) => num(x.profit_factor)) + "</tbody>";
+
+  // Curvas diarias desde 2018: la elegida, la de la estrategia y comprar y mantener
+  const total = labSimulate(d, sig, p.cost, "2018-01-01", null), totalRef = labSimulate(d, refSig, ref.cost, "2018-01-01", null);
+  const daily = (sim, scale) => {
+    const out = [];
+    for (let i = 0; i < sim.t.length; i++) {
+      const tday = Math.floor(sim.t[i] / 86400) * 86400, val = sim.v[i] * scale;
+      if (out.length && out[out.length - 1].time === tday) out[out.length - 1].value = val; else out.push({ time: tday, value: val });
+    }
+    return out;
+  };
+  const bh = { t: total.t, v: total.t.map((_, i) => d.c[total.first + i] / d.c[total.first]) };
+  labChart();
+  lab.S.mine.setData(daily(total, 100));
+  lab.S.ref.setData(same ? [] : daily(totalRef, 100));
+  lab.S.bh.setData(daily(bh, 100));
+  lab.chart.timeScale().fitContent();
+  labLegend();
+  labHeat(p);
+  document.getElementById("lab-status").textContent = `listo en ${nf(0).format(performance.now() - t0)} ms`;
+}
+
+function labChart() {
+  const t = theme();
+  if (!lab.chart) {
+    lab.chart = LWC.createChart(document.getElementById("lab-chart"), {
+      autoSize: true, handleScroll: { vertTouchDrag: false }, localization: { locale: "es-AR" },
+      rightPriceScale: { mode: LWC.PriceScaleMode.Logarithmic }, timeScale: { timeVisible: false, minBarSpacing: 0.05 },
+    });
+    const n0 = { type: "custom", minMove: 1, formatter: (x) => nf(0).format(x) };
+    lab.S.bh = lab.chart.addSeries(LWC.LineSeries, { lineWidth: 1, priceFormat: n0, priceLineVisible: false, lastValueVisible: false });
+    lab.S.ref = lab.chart.addSeries(LWC.LineSeries, { lineWidth: 1, lineStyle: LWC.LineStyle.Dashed, priceFormat: n0,
+      priceLineVisible: false, lastValueVisible: false });
+    lab.S.mine = lab.chart.addSeries(LWC.LineSeries, { lineWidth: 2, priceFormat: n0, priceLineVisible: false });
+    lab.chart.subscribeCrosshairMove((param) => labLegend(param));
+    lab.chart.timeScale().subscribeSizeChange(() => lab.chart.timeScale().fitContent());
+  }
+  lab.chart.applyOptions({
+    layout: { background: { type: "solid", color: t.surface }, textColor: t.text, fontSize: 11 },
+    grid: { vertLines: { color: t.grid }, horzLines: { color: t.grid } },
+    rightPriceScale: { borderColor: t.border }, timeScale: { borderColor: t.border },
+  });
+  lab.S.mine.applyOptions({ color: t.s2 });
+  lab.S.ref.applyOptions({ color: css("--strat") });
+  lab.S.bh.applyOptions({ color: t.muted });
+}
+
+function labLegend(param) {
+  if (!lab.chart) return;
+  const pick = (s) => {
+    if (param && param.time !== undefined) { const x = param.seriesData.get(s); return x ? x.value : null; }
+    const d = s.data(); return d.length ? d[d.length - 1].value : null;
+  };
+  const t = theme(), sw = (c, dsh) => `<span class="sw${dsh ? " dash" : ""}" style="border-top-color:${c}"></span>`;
+  const ref = pick(lab.S.ref);
+  document.getElementById("lab-legend").innerHTML = `US$ 100 en 2018, ${param && param.time !== undefined ? fmtLocal(param.time).split(",")[0] : "hoy"}:`
+    + `${sw(t.s2)}estos parámetros <b>${fmtNum(pick(lab.S.mine), 0)}</b>`
+    + (ref != null ? `${sw(css("--strat"), true)}estrategia <b>${fmtNum(ref, 0)}</b>` : "")
+    + `${sw(t.muted)}comprar y mantener <b>${fmtNum(pick(lab.S.bh), 0)}</b>`;
+}
+
+// Sharpe dentro y fuera de muestra para una grilla de Donchian × stop: si el elegido está en una isla, es sobreajuste
+function labHeat(p) {
+  const d = lab.data, dons = [40, 60, 90, 120, 160, 200, 260], mults = [2, 3, 4, 5, 6];
+  const grids = LAB_PERIODS.slice(0, 2).map(() => []);
+  for (const don of dons) {
+    const rowsIn = [], rowsOut = [];
+    for (const m of mults) {
+      const sig = labSignals(d, { ...p, don_len: don, atr_mult: m });
+      rowsIn.push(labStats(d, labSimulate(d, sig, p.cost, "2018-01-01", "2023-01-01")).sharpe);
+      rowsOut.push(labStats(d, labSimulate(d, sig, p.cost, "2023-01-01", null)).sharpe);
+    }
+    grids[0].push(rowsIn); grids[1].push(rowsOut);
+  }
+  const t = theme();
+  // Escala divergente centrada en el Sharpe de comprar y mantener de cada período
+  const bhs = LAB_PERIODS.slice(0, 2).map(([, a, b]) => {
+    const sim = labSimulate(d, { entry: new Uint8Array(d.t.length).fill(1), exit: new Uint8Array(d.t.length),
+      stop: new Float64Array(d.t.length).fill(NaN) }, p.cost, a, b);
+    return labStats(d, sim).sharpe;
+  });
+  const cell = (x, bh) => {
+    const k = Math.max(-1, Math.min(1, (x - bh) / 0.6));
+    const bg = alpha(k >= 0 ? t.up : t.down, Math.abs(k) * 0.55);
+    return `background:${bg}`;
+  };
+  document.getElementById("lab-heat").innerHTML = grids.map((g, gi) =>
+    `<div class="scroll-x"><table class="heat"><caption class="muted" style="text-align:left;padding:4px 0">`
+    + `${LAB_PERIODS[gi][0]} · comprar y mantener ${nf(2).format(bhs[gi])} (azul = mejor, rojo = peor)</caption>`
+    + `<thead><tr><th>Donchian ↓ · stop →</th>${mults.map((m) => `<th>${m}×</th>`).join("")}</tr></thead><tbody>`
+    + g.map((r, i) => `<tr><th>${dons[i]}</th>${r.map((x, j) => `<td class="${dons[i] === p.don_len && mults[j] === p.atr_mult ? "cur" : ""}"`
+      + ` style="${cell(x, bhs[gi])}">${isNaN(x) ? "–" : nf(2).format(x)}</td>`).join("")}</tr>`).join("")
+    + `</tbody></table></div>`).join("");
+}
+
+document.getElementById("lab").addEventListener("toggle", (ev) => { if (ev.target.open) labOpen(); });
+document.getElementById("lab-form").addEventListener("submit", (ev) => { ev.preventDefault(); labRun(); });
+document.getElementById("lab-reset").addEventListener("click", () => { if (lab.defaults) { labFill(lab.defaults); labRun(); } });
+
+// ---------- lectura de régimen (estrategia/regimen.py) ----------
+function renderRegime(r) {
+  const card = document.getElementById("regime");
+  card.hidden = !r;
+  if (!r) return;
+  const pct = (x, d = 1) => x == null ? "–" : nf(d).format(x) + " %";
+  const signed = (x, d = 1) => x == null ? "–" : `<span class="${x >= 0 ? "pos" : "neg"}">${x >= 0 ? "+" : "−"}${nf(d).format(Math.abs(x))} %</span>`;
+  const h30 = (o) => o && o["30"], h7 = (o) => o && o["7"];
+  const verdict = (s) => !s ? `<span class="muted">pocos casos</span>`
+    : s.holds ? `<span class="holds ${s.excess >= 0 ? "pos" : "neg"}">✓ se sostiene ${s.excess >= 0 ? "(mejor que la base)" : "(peor que la base)"}</span>`
+    : `<span class="muted">no concluyente${s.t != null ? ` (t ${nf(1).format(s.t)})` : ""}</span>`;
+  const b = r.base;
+  const sim = r.similar, s30 = h30(sim);
+  const lead = sim && s30
+    ? `En los <b>${nf(0).format(sim.n)}</b> días desde ${r.since.slice(0, 4)} con ${sim.labels.map((x) => { const w = x.split(" (")[0]; return w === w.toUpperCase().slice(0, 3) + w.slice(3) ? w : w[0].toLowerCase() + w.slice(1); }).join(", ")} `
+      + `en el mismo estado que hoy, BTC estaba más arriba 30 días después el <b>${pct(s30.pos, 0)}</b> de las veces `
+      + `(mediana ${signed(s30.median)}), contra ${pct(b["30"].pos, 0)} de todos los días (mediana ${signed(b["30"].median)}). `
+      + (s30.holds ? "La diferencia se sostiene en los dos períodos." : `Con ${s30.n_ind} casos independientes, <b>no alcanza para ser concluyente</b>.`)
+    : "";
+  const row = (f) => {
+    const a = h7(f), c = h30(f);
+    return `<tr><td>${f.label}</td><td class="state">${f.state || "–"}</td>`
+      + `<td class="num">${f.value == null ? "–" : nf(1).format(f.value) + (f.unit ? " " + f.unit : "")}</td>`
+      + `<td class="num">${f.n ? nf(0).format(f.n) : "–"}</td>`
+      + `<td class="num">${a ? `${signed(a.mean)} · ${pct(a.pos, 0)}` : "–"}</td>`
+      + `<td class="num">${c ? `${signed(c.mean)} · ${pct(c.pos, 0)}` : "–"}</td>`
+      + `<td class="num">${c ? signed(c.excess) : "–"}</td>`
+      + `<td class="num">${c ? Object.values(c.halves).map((x) => x == null ? "–" : signed(x, 0)).join(" / ") : "–"}</td>`
+      + `<td>${verdict(c)}</td></tr>`;
+  };
+  const longs = r.factors.filter((f) => f.long_history), shorts = r.factors.filter((f) => !f.long_history);
+  card.innerHTML = `<h2>Lectura de régimen <span class="muted">· velas diarias, cierre del ${r.asof}</span></h2>`
+    + `<p class="lead">${lead}</p>`
+    + `<div class="scroll-x"><table><thead><tr><th>Factor</th><th>Hoy</th><th class="num">Valor</th><th class="num">Días así</th>`
+    + `<th class="num">7 d después<br><span class="muted">media · % suba</span></th>`
+    + `<th class="num">30 d después<br><span class="muted">media · % suba</span></th>`
+    + `<th class="num">30 d vs base</th><th class="num">vs base por período<br><span class="muted">2018-22 / 2023-hoy</span></th>`
+    + `<th>Lectura</th></tr></thead><tbody>`
+    + `<tr class="base"><td>Todos los días (base)</td><td></td><td></td><td class="num">${nf(0).format(b["30"].n)}</td>`
+    + `<td class="num">${signed(b["7"].mean)} · ${pct(b["7"].pos, 0)}</td><td class="num">${signed(b["30"].mean)} · ${pct(b["30"].pos, 0)}</td>`
+    + `<td></td><td></td><td></td></tr>`
+    + longs.map(row).join("")
+    + (shorts.length ? `<tr class="sub"><th colspan="9">Historia corta (desde 2024): pocos casos, valen menos</th></tr>` + shorts.map(row).join("") : "")
+    + `</tbody></table></div>`
+    + `<p class="note">Retorno comprando al cierre del día. "Se sostiene": la diferencia con la base tiene el mismo signo en 2018-2022 y en 2023-hoy `
+    + `y |t| ≥ 2, contando días separados al menos el horizonte. Es una descripción del pasado, no una señal: lo que funcionó puede dejar de funcionar.</p>`;
 }
 
 // ---------- mapa de liquidez sobre el panel de precio ----------
@@ -888,7 +1465,8 @@ function renderStatus(st) {
         tile("Open interest", nf(0).format(s.open_interest) + " BTC", [["en dólares", fmtUsdM(s.open_interest * s.mark_price)]]),
         liquidationsTile(st.liquidations),
       ]),
-      group("Flujo y estrategia", [whalesTile(st.whales), strategyTile(st.strategy), ...executorTile(st.executor), ...paperTiles(st.paper)]),
+      group("Flujo y señales", [whalesTile(st.whales), ...[strategyTile(st.strategy)].flat(), ...executorTile(st.executor), ...mlTile(st.ml),
+        ...paperTiles(st.paper)]),
     ].join("");
     document.getElementById("updated").textContent =
       `snapshot ${fmtLocal(snapT)} · datos ${fmtLocal(st.generated)}`;
@@ -959,6 +1537,8 @@ function renderHero(st) {
   const w = st.whales && (st.whales.windows.find((x) => x.hours === 4) || st.whales.windows[0]);
   if (w) v.push(verdict("Ballenas 4 h", { comprando: "Comprando", vendiendo: "Vendiendo", neutral: "Neutral" }[w.reading],
     `neto ${fmtSigned(w.net_usd)}`, w.reading === "comprando" ? "up" : w.reading === "vendiendo" ? "down" : ""));
+  if (st.ml) v.push(verdict(`Modelo ${st.ml.horizon_h} h`, mlLevel(st.ml),
+    `P ${nf(0).format(st.ml.p_move * 100)} % · percentil ${nf(0).format(st.ml.p_move_pctile_90d)}`, ""));
   const s = st.snapshot;
   if (s) v.push(verdict("Funding", fmtPct(s.est_funding_rate * 3 * 365, 1) + " anual",
     s.est_funding_rate >= 0 ? "pagan los largos" : "pagan los cortos", ""));
@@ -978,7 +1558,7 @@ function renderHero(st) {
 }
 
 function strategyTile(st) {
-  if (!st) return tile("Estrategia (4h)", "–", [["estado", "sin state.json"]]);
+  if (!st) return [];
   const order = st.action_next_open;
   const value = order ? (order === "buy" ? "COMPRA" : "VENTA") + " en la apertura" : st.in_position ? "En posición" : "Afuera";
   const rows = st.in_position
@@ -987,6 +1567,31 @@ function strategyTile(st) {
     : [["compra si cierra >", fmtPrice(st.entry_trigger)], ["distancia", "+" + fmtNum(st.entry_trigger_distance_pct, 2) + " %"]];
   rows.push(["vela", st.last_candle_open_utc.slice(5, 16).replace("T", " ") + " UTC"]);
   return tile("Estrategia (4h)", value, rows, order ? " alert" : "");
+}
+
+// Modelo ML (ml/live_model.py): P(movimiento) tiene información, la dirección no
+function mlLevel(m) {
+  const q = m.p_move_pctile_90d;
+  return q >= 80 ? "Movimiento probable" : q <= 20 ? "Calma probable" : "Movimiento normal";
+}
+function mlTile(m) {
+  if (!m) return [];
+  const pc = (x) => x == null ? "–" : nf(0).format(x * 100) + " %";
+  const th = m.threshold_pct != null ? nf(1).format(m.threshold_pct) + " %" : "el umbral";
+  const L = m.live || {};
+  const live = L.auc_move != null
+    ? `AUC movimiento ${nf(2).format(L.auc_move)}${L.auc_direction != null ? ` · dirección ${nf(2).format(L.auc_direction)}` : ""} (${nf(0).format(L.n)} velas)`
+    : `${nf(0).format(L.n || 0)} de ${nf(0).format(L.min_n || 0)} velas para medirlo`;
+  const rows = [
+    [`se mueve > ${th} en ${m.horizon_h} h`, `${pc(m.p_move)} (base ${pc(1 - m.base_rate.neutral)})`],
+    ["percentil 90 d", nf(0).format(m.p_move_pctile_90d)],
+    [`sube > ${th}`, `${pc(m.p_long)} (base ${pc(m.base_rate.long)})`],
+    [`baja > ${th}`, `${pc(m.p_short)} (base ${pc(m.base_rate.short)})`],
+    ["dirección", `<span title="AUC ${nf(2).format(m.backtest.auc_direction)} en el backtest: casi azar">sin poder predictivo</span>`],
+    ["en vivo", live],
+    ["vela", m.candle_open_utc.slice(5, 16).replace("T", " ") + " UTC"],
+  ];
+  return [tile(`Modelo ML · próximas ${m.horizon_h} h`, mlLevel(m), rows, m.p_move_pctile_90d >= 80 ? " alert" : "")];
 }
 
 // Ejecutor (estrategia/ejecutor.py): la estrategia 4h operando de verdad en Binance spot (testnet o real)
@@ -1056,12 +1661,19 @@ function badge(ok) {
 // ---------- carga ----------
 async function load(tf, keepView) {
   try {
-    const [data, st, lq] = await Promise.all([getJSON(`chart_${tf}.json`), getJSON("status.json"),
-      getJSON("liquidity.json").catch(() => null)]);
+    const [data, st, lq, strat, reg] = await Promise.all([getJSON(`chart_${tf}.json`), getJSON("status.json"),
+      getJSON("liquidity.json").catch(() => null), getJSON("strategy.json").catch(() => null),
+      getJSON("regime.json").catch(() => null)]);
+    renderRegime(reg);
     current.tf = tf;
+    current.strategy = strat;
+    // Lo de la estrategia 4h aparece solo si el servidor la publica (activa en config.json)
+    document.getElementById("strat-toggle-label").hidden = !strat;
+    document.getElementById("lab").hidden = !strat;
     liq.data = lq; liq.key = "";
     current.status = st;
     setChartData(data, keepView);
+    renderPerformance();
     setStrategyLine(st.strategy);
     setLiquidityLines();
     renderStatus(st);

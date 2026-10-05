@@ -21,7 +21,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from estrategia.backtest import COST, PARAMS, download, report, rma, run, signals  # noqa: E402
+from estrategia.backtest import COST, PARAMS, download, report, rma, run, signals, stats  # noqa: E402
 
 CONF = dict(ema_len=200, rsi_lo=50, rsi_hi=70, atr_len=14, sl_mult=2.0, tp_mult=4.0, adx_min=None)
 
@@ -96,7 +96,7 @@ def run_conf(df, params, cost=COST, start=None, end=None):
     curve, trades = simulate_bracket(df, entry, atr, params["sl_mult"], params["tp_mult"], cost, start, end)
     last = df.close[curve.index[-1]]
     rets = [t.get("ret", last * (1 - cost) / (t["entry_price"] * (1 + cost)) - 1) for t in trades]
-    return report(curve, np.array(rets), df.close[curve.index])
+    return report(stats(curve, np.array(rets), df.close[curve.index]))
 
 
 def resample_1d(df):

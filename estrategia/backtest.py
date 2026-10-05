@@ -68,7 +68,8 @@ def simulate(df, entry, exit_, stop, cost=COST, start=None, end=None) -> dict:
 
     Estado final: `pending` es la orden a ejecutar en la apertura de la vela
     siguiente a la última ("buy", "sell" o None) y `trail` el stop vigente
-    durante esa vela.
+    durante esa vela. `trails` es el stop fijado al cierre de cada vela (vigente
+    en la siguiente), NaN sin posición: lo dibuja el dashboard.
     """
     o, l, c = df.open.to_numpy(), df.low.to_numpy(), df.close.to_numpy()
     en, ex, st = entry.to_numpy(), exit_.to_numpy(), stop.to_numpy()
@@ -78,7 +79,7 @@ def simulate(df, entry, exit_, stop, cost=COST, start=None, end=None) -> dict:
     if end:
         m &= df.index < pd.Timestamp(end)
     cash, qty, trail, pending = 1.0, 0.0, np.nan, None
-    curve, trades = np.full(len(df), np.nan), []
+    curve, trails, trades = np.full(len(df), np.nan), np.full(len(df), np.nan), []
 
     def close_trade(i, price, reason):
         t = trades[-1]
@@ -105,29 +106,42 @@ def simulate(df, entry, exit_, stop, cost=COST, start=None, end=None) -> dict:
             if en[i]:
                 pending = "buy"
         curve[i] = cash + qty * c[i]
-    return dict(curve=pd.Series(curve, df.index).dropna(), trades=trades,
+        if qty > 0:
+            trails[i] = trail
+    return dict(curve=pd.Series(curve, df.index).dropna(), trades=trades, trails=pd.Series(trails, df.index),
                 in_position=qty > 0, trail=None if np.isnan(trail) else float(trail), pending=pending)
 
 
-def run(df, entry, exit_, stop, cost=COST, start=None, end=None):
+def period_stats(df, entry, exit_, stop, cost=COST, start=None, end=None) -> dict:
     sim = simulate(df, entry, exit_, stop, cost, start, end)
     curve = sim["curve"]
     # una posición abierta se valúa como si se vendiera al último cierre del período
     last = df.close[curve.index[-1]]
     rets = [t.get("ret", last * (1 - cost) / (t["entry_price"] * (1 + cost)) - 1) for t in sim["trades"]]
-    return report(curve, np.array(rets), df.close[curve.index])
+    return stats(curve, np.array(rets), df.close[curve.index])
 
 
-def report(curve, tr, close):
+def run(df, entry, exit_, stop, cost=COST, start=None, end=None):
+    return report(period_stats(df, entry, exit_, stop, cost, start, end))
+
+
+def stats(curve, tr, close) -> dict:
+    """Métricas de una curva de capital (base 1) y sus retornos por trade, contra comprar y mantener."""
     yrs = (curve.index[-1] - curve.index[0]).days / 365.25
     daily = curve.resample("1D").last().pct_change().dropna()
-    dd = (curve / curve.cummax() - 1).min()
-    cagr = curve.iloc[-1] ** (1 / yrs) - 1
     gains, losses = tr[tr > 0].sum(), -tr[tr <= 0].sum()
-    return (f"CAGR {cagr:6.1%}  MaxDD {dd:6.1%}  Sharpe {daily.mean() / daily.std() * np.sqrt(365):4.2f}  "
-            f"trades {len(tr):3d}  aciertos {np.mean(tr > 0):5.1%}  PF {gains / losses:4.2f}  "
-            f"| buy&hold CAGR {(close.iloc[-1] / close.iloc[0]) ** (1 / yrs) - 1:6.1%}  "
-            f"MaxDD {(close / close.cummax() - 1).min():6.1%}")
+    return dict(cagr=curve.iloc[-1] ** (1 / yrs) - 1, max_dd=(curve / curve.cummax() - 1).min(),
+                sharpe=daily.mean() / daily.std() * np.sqrt(365), trades=len(tr),
+                win_rate=float(np.mean(tr > 0)) if len(tr) else float("nan"),
+                profit_factor=gains / losses if losses else float("nan"),
+                bh_cagr=(close.iloc[-1] / close.iloc[0]) ** (1 / yrs) - 1,
+                bh_max_dd=(close / close.cummax() - 1).min())
+
+
+def report(m: dict) -> str:
+    return (f"CAGR {m['cagr']:6.1%}  MaxDD {m['max_dd']:6.1%}  Sharpe {m['sharpe']:4.2f}  "
+            f"trades {m['trades']:3d}  aciertos {m['win_rate']:5.1%}  PF {m['profit_factor']:4.2f}  "
+            f"| buy&hold CAGR {m['bh_cagr']:6.1%}  MaxDD {m['bh_max_dd']:6.1%}")
 
 
 if __name__ == "__main__":
