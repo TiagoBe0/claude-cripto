@@ -68,3 +68,32 @@ con una caída algo mayor. La grilla tampoco: 0 de 9 en A, 6 de 9 en B.
 **Hallazgo:** en las dos mitades lo mejor es BTC spot. El funding del perpetuo es un costo estructural para quien
 está comprado: en 2020-2022 el mismo BTC dio +130 % en spot y +23 % en el perpetuo. Para exposición compradora,
 el perpetuo no conviene; solo tiene sentido para cortos o para apalancamiento corto en el tiempo.
+
+## Ronda 4 (2026-10-05) · emisión de stablecoins · NO PASA
+
+`python -m investigacion.ronda4` · reglas registradas antes de correrla (0ad393e) · tabla en `data/research/ronda4.csv`.
+
+**Pasan 0 de 18 pruebas** (por azar se esperaba ~0,9). Excesos sobre la base, netos de costos y funding:
+
+| | H = 7 | H = 14 | H = 30 |
+|---|---|---|---|
+| S1 largo (día de emisión ≥ p95) | +0,40 % (t 0,4) | +0,46 % (t 0,3) | −0,77 % (t −0,3) |
+| S1 corto (día de quema ≤ p5) | +0,22 % (t 0,2) | +0,23 % (t 0,1) | +2,12 % (t 0,7), B 18 eventos |
+| S2 largo (emisión 30 d ≥ p80) | +0,56 % (t 0,6) | +1,40 % (t 0,9) | +3,56 % (t 1,1) |
+| S2 corto (emisión 30 d ≤ p20) | +1,30 % (t 0,8) | +2,23 % (t 0,7) | +7,01 % (t 1,2), B −24 % con 2 eventos |
+| S3 largo (pólvora seca) | −0,21 % | −1,02 % | −0,65 % |
+| S3 corto | +1,89 % (t 1,4), B −0,75 % | +0,89 % | −0,21 % |
+
+Lectura:
+
+- **El día de emisión fuerte (S1) no anticipa nada**: el exceso está cerca de cero en todos los horizontes. Que
+  Tether o Circle emitan mucho un día no es una señal de compra.
+- **La "pólvora seca" (S3) tampoco**: emisión sin suba previa da excesos negativos del lado largo.
+- **Lo único consistente es S2 largo**: cuando la emisión de 30 días está alta, BTC rinde más que la base en las
+  dos mitades y en los tres horizontes, creciendo con el plazo (+0,6 / +1,4 / +3,6 %). Pero con t ≤ 1,1 no se
+  distingue del ruido, y probablemente sea el mismo fenómeno que "el mercado alcista": en las subas entra plata
+  y se emiten stablecoins, o sea que la emisión acompaña al precio más que adelantarlo.
+- Del lado corto, S2 casi no tiene eventos en B (la oferta de stablecoins creció casi todo 2023-2025).
+
+**Descartada sin ir al holdout.** La emisión de stablecoins queda como dato de contexto en el panel (cuánta liquidez
+nueva hay), no como señal de entrada.
