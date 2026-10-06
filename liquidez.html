@@ -114,7 +114,10 @@
 <body>
 <main>
   <header>
-    <h1>Mapa de calor de liquidez · BTCUSDT perpetuo</h1>
+    <h1>Mapa de calor de liquidez · BTC</h1>
+    <div class="seg" id="mode" role="tablist" aria-label="Qué mapa">
+      <button data-m="liq" role="tab">Liquidaciones estimadas · 30 d</button><button data-m="book" role="tab">Libro de órdenes · 24 h</button>
+    </div>
     <span class="muted" id="updated">cargando…</span>
     <span class="spacer"></span>
     <a href="./">← Panel</a>
@@ -124,41 +127,40 @@
   <div class="stats" id="stats"></div>
 
   <div class="card controls" role="group" aria-label="Controles del mapa">
-    <div class="group"><span class="lbl">Ventana</span>
-      <div class="seg" id="win">
-        <button data-d="1">1 d</button><button data-d="3">3 d</button><button data-d="7" aria-pressed="true">7 d</button><button data-d="14">14 d</button><button data-d="30">30 d</button>
-      </div></div>
-    <div class="group"><span class="lbl">Apalancamiento</span><div class="seg" id="tiers"></div></div>
+    <div class="group"><span class="lbl">Ventana</span><div class="seg" id="win"></div>
+      <div class="seg" id="zoom-x" aria-label="Zoom en el tiempo"><button data-z="out" title="Alejar en el tiempo">−</button><button data-z="in" title="Acercar en el tiempo">+</button></div></div>
+    <div class="group"><span class="lbl" id="layers-lbl"></span><div class="seg" id="layers"></div></div>
     <div class="group"><span class="lbl">Lado</span>
       <div class="seg" id="side">
-        <button data-s="both" aria-pressed="true">Ambos</button><button data-s="long">Largos</button><button data-s="short">Cortos</button>
+        <button data-s="both">Ambos</button><button data-s="below" id="side-below"></button><button data-s="above" id="side-above"></button>
       </div></div>
     <div class="group"><span class="lbl">Escala</span>
       <div class="seg" id="scale">
-        <button data-s="log" aria-pressed="true" title="Se ven también los tramos chicos">Log</button><button data-s="lin" title="Solo resaltan los tramos grandes">Lineal</button>
+        <button data-s="log" title="Se ven también los tramos chicos">Log</button><button data-s="lin" title="Solo resaltan los tramos grandes">Lineal</button>
       </div></div>
     <label class="group" title="Más intensidad = los tramos medianos se ven más brillantes"><span class="lbl">Intensidad</span>
       <input type="range" id="gain" min="0.3" max="3" step="0.05" value="1"></label>
-    <label class="toggle"><input type="checkbox" id="t-candles" checked> Velas</label>
-    <label class="toggle"><input type="checkbox" id="t-real" checked> Liquidaciones reales</label>
+    <label class="toggle"><input type="checkbox" id="t-price" checked> <span id="t-price-lbl"></span></label>
+    <label class="toggle"><input type="checkbox" id="t-bubbles" checked> <span id="t-bubbles-lbl"></span></label>
     <label class="toggle"><input type="checkbox" id="t-swing" checked> Máx/mín sin barrer</label>
     <label class="toggle"><input type="checkbox" id="t-profile" checked> Perfil</label>
   </div>
 
   <div class="card plot">
-    <canvas id="heat" aria-label="Mapa de calor: tiempo en el eje horizontal, precio en el vertical, color = US$ estimados a liquidar"></canvas>
+    <canvas id="heat" aria-label="Mapa de calor: tiempo en el eje horizontal, precio en el vertical, color = US$ en cada tramo de precio"></canvas>
     <div id="tip" hidden></div>
+    <div class="err" id="err" hidden></div>
   </div>
   <div class="scale">
-    <span>menos</span><canvas id="scale-bar" width="220" height="10"></canvas><span>más US$ a liquidar</span>
+    <span>menos</span><canvas id="scale-bar" width="220" height="10"></canvas><span id="scale-lbl"></span>
     <span id="scale-max"></span>
     <span class="spacer"></span>
-    <span><span class="sw" style="background:var(--liq-long)"></span>largos liquidados</span>
-    <span><span class="sw" style="background:var(--liq-short)"></span>cortos liquidados</span>
-    <span>· rueda: zoom en el tiempo · Shift + rueda o rueda sobre el eje de precios: zoom en el precio · arrastrar: mover · doble clic: volver</span>
+    <span><span class="sw" style="background:var(--liq-long)"></span><span id="b0-lbl"></span></span>
+    <span><span class="sw" style="background:var(--liq-short)"></span><span id="b1-lbl"></span></span>
+    <span>· zoom en el tiempo: rueda, − / + o arrastrar el eje de abajo · en el precio: Shift + rueda o arrastrar el eje de la derecha · arrastrar el mapa: mover · doble clic: volver</span>
   </div>
 
-  <div class="card notes">
+  <div class="card notes" id="notes-liq">
     <p><b>Qué es.</b> Dónde quedarían liquidadas las posiciones apalancadas abiertas en los últimos 30 días, hora por hora.
       Cada aumento del open interest de Binance abre largos y cortos al precio de esa hora; se reparten según un
       apalancamiento <b>supuesto</b> (<span id="model"></span>) y se calcula su precio de liquidación. Un nivel se borra
@@ -170,21 +172,49 @@
     <p><b>Límite probado.</b> En la ronda 9 de investigación, este mapa no anticipó hacia qué lado va el precio mejor
       que la sola distancia a cada franja (2020-2025). Sirve para ver dónde hay combustible, no como señal.</p>
   </div>
+  <div class="card notes" id="notes-book" hidden>
+    <p><b>Qué es.</b> Las órdenes límite que había en el libro de Binance cada minuto, en tramos de US$ 10: abajo del precio,
+      compras (bids); arriba, ventas (asks). No es una estimación: es lo que estaba publicado. Spot llega a ~±1 % del precio
+      (5.000 niveles) y el perpetuo a ~±0,15 % (1.000 niveles, el máximo que da Binance).</p>
+    <p><b>Cómo leerlo.</b> Una franja horizontal que dura es un muro que se mantiene; si desaparece justo antes de que llegue
+      el precio, se retiró (o era una orden para mostrar). Si el precio la atraviesa y la franja se apaga, se ejecutó. Los
+      puntos son órdenes a mercado de ballenas (≥ US$ 100 mil) en el precio medio de su minuto: celeste compras, naranja ventas.</p>
+    <p><b>Límite.</b> Una foto por minuto: lo que aparece y desaparece dentro del minuto no se ve. Las órdenes grandes
+      pueden ser falsas (se retiran antes de ejecutarse). La historia empieza cuando arrancó esta captura.</p>
+  </div>
 </main>
 
 <script>
 "use strict";
 const DATA = "data/dashboard/";
-const DEFAULT_DAYS = innerWidth < 640 ? 3 : 7;
+const MOBILE = innerWidth < 640;
 const nf = (d) => new Intl.NumberFormat("es-AR", { maximumFractionDigits: d, minimumFractionDigits: d });
 const fmtP = (p) => nf(0).format(p);
 const fmtUsd = (u) => u >= 1e9 ? `US$ ${nf(2).format(u / 1e9)} mil M` : u >= 1e6 ? `US$ ${nf(1).format(u / 1e6)} M`
   : `US$ ${nf(0).format(u / 1e3)} mil`;
 const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 const pad = (n) => String(n).padStart(2, "0");
-const fmtT = (s) => { const d = new Date(s * 1000); return `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)} ${pad(d.getUTCHours())}:00`; };
+const el = (id) => document.getElementById(id);
 
-// Paleta secuencial (tipo viridis/inferno, perceptualmente pareja) sobre fondo oscuro
+// Lo que cambia entre los dos mapas
+const MODES = {
+  liq: {
+    file: "liq_heatmap.json", windows: [[1, "1 d"], [3, "3 d"], [7, "7 d"], [14, "14 d"], [30, "30 d"]].map(([d, l]) => [d * 24, l]),
+    defaultCols: MOBILE ? 72 : 168, layersLbl: "Apalancamiento", below: "Largos", above: "Cortos",
+    priceLbl: "Velas", bubblesLbl: "Liquidaciones reales", b0: "largos liquidados", b1: "cortos liquidados",
+    scaleLbl: "más US$ a liquidar", what: (side) => `${side === "below" ? "largos" : "cortos"} a liquidar (estimado)`,
+    bubbleWhat: "liquidado de verdad en esa hora",
+  },
+  book: {
+    file: "book_heatmap.json", windows: [[1, "1 h"], [3, "3 h"], [6, "6 h"], [12, "12 h"], [24, "24 h"]].map(([h, l]) => [h * 60, l]),
+    defaultCols: MOBILE ? 120 : 360, layersLbl: "Mercado", below: "Compras", above: "Ventas",
+    priceLbl: "Precio medio", bubblesLbl: "Órdenes de ballenas", b0: "ballena vende a mercado", b1: "ballena compra a mercado",
+    scaleLbl: "más US$ en órdenes límite", what: (side) => side === "below" ? "compras límite (bids)" : "ventas límite (asks)",
+    bubbleWhat: "órdenes de ballenas en ese minuto",
+  },
+};
+
+// Paleta secuencial (tipo viridis, perceptualmente pareja) sobre fondo oscuro
 const STOPS = [[14, 12, 29], [45, 22, 92], [88, 33, 140], [33, 102, 172], [24, 160, 160], [92, 200, 99], [235, 220, 60], [255, 250, 210]];
 const LUT = new Uint8ClampedArray(256 * 4);
 for (let i = 0; i < 256; i++) {
@@ -195,86 +225,144 @@ for (let i = 0; i < 256; i++) {
 
 const M = { top: 8, right: 74, bottom: 26, left: 8, profile: 120 };
 const st = {
-  hm: null, liq: null, q: null, vals: null, sum: null, tiersOn: [], side: "both", scale: "log", gain: 1,
-  view: null, img: null, imgKey: "", hover: null, show: { candles: true, real: true, swing: true, profile: true },
+  mode: "liq", src: null, cache: {}, liq: null, sum: null, layersOn: {}, side: "both", scale: "log", gain: 1,
+  view: null, imgKey: "", hover: null, max: 1, show: { price: true, bubbles: true, swing: true, profile: true },
 };
 try {
   const saved = JSON.parse(localStorage.getItem("liqmap") || "{}");
-  if (saved.side) st.side = saved.side;
-  if (saved.scale) st.scale = saved.scale;
-  if (saved.gain) st.gain = saved.gain;
+  for (const k of ["side", "scale", "gain", "mode"]) if (saved[k] != null) st[k] = saved[k];
   if (saved.show) Object.assign(st.show, saved.show);
 } catch (e) { /* sin storage */ }
+if (location.hash === "#libro") st.mode = "book";
+if (location.hash === "#liquidaciones") st.mode = "liq";
+if (!MODES[st.mode]) st.mode = "liq";
+if (!["both", "below", "above"].includes(st.side)) st.side = "both";
 const save = () => {
-  try { localStorage.setItem("liqmap", JSON.stringify({ side: st.side, scale: st.scale, gain: st.gain, show: st.show })); } catch (e) { /* nada */ }
+  try { localStorage.setItem("liqmap", JSON.stringify({ side: st.side, scale: st.scale, gain: st.gain, mode: st.mode, show: st.show })); } catch (e) { /* nada */ }
 };
 
-const canvas = document.getElementById("heat"), ctx = canvas.getContext("2d");
+const canvas = el("heat"), ctx = canvas.getContext("2d");
 const off = document.createElement("canvas"), offCtx = off.getContext("2d");
 
-async function load() {
-  const [hm, liq] = await Promise.all([
-    fetch(DATA + "liq_heatmap.json", { cache: "no-store" }).then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); }),
-    fetch(DATA + "liquidity.json", { cache: "no-store" }).then((r) => r.ok ? r.json() : null).catch(() => null),
-  ]);
-  st.hm = hm; st.liq = liq;
-  const bin = atob(hm.data), n = bin.length;
-  st.q = new Uint8Array(n);
-  for (let i = 0; i < n; i++) st.q[i] = bin.charCodeAt(i);
-  // valor de cada escalón: 0 = nada; q >= 1 -> 10 ** (lo + (q - 1) * (hi - lo) / 254)
-  st.vals = new Float64Array(256);
-  for (let k = 1; k < 256; k++) st.vals[k] = 10 ** (hm.log10_lo + (k - 1) * (hm.log10_hi - hm.log10_lo) / 254);
-  if (st.tiersOn.length !== hm.tiers.length) st.tiersOn = hm.tiers.map(() => true);
-  document.getElementById("model").textContent = hm.model;
-  document.getElementById("updated").textContent = `actualizado ${new Date(hm.generated * 1000).toLocaleString("es-AR", { hour12: false })} · ejes en UTC`;
-  const tb = document.getElementById("tiers");
-  tb.innerHTML = hm.tiers.map((t, i) => `<button data-i="${i}" aria-pressed="${st.tiersOn[i]}">${t}</button>`).join("");
-  tb.onclick = (ev) => {
-    const b = ev.target.closest("button"); if (!b) return;
-    const i = +b.dataset.i;
-    st.tiersOn[i] = !st.tiersOn[i];
-    if (!st.tiersOn.some(Boolean)) st.tiersOn[i] = true;  // al menos uno
-    b.setAttribute("aria-pressed", st.tiersOn[i]);
-    recompute(); draw();
-  };
+// ---- datos: los dos JSON quedan en la misma forma ----
+function decode(j) {
+  const bin = atob(j.data), q = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) q[i] = bin.charCodeAt(i);
+  const vals = new Float64Array(256);  // 0 = nada; q >= 1 -> 10 ** (lo + (q - 1) * (hi - lo) / 254)
+  for (let k = 1; k < 256; k++) vals[k] = 10 ** (j.log10_lo + (k - 1) * (j.log10_hi - j.log10_lo) / 254);
+  return { q, vals };
+}
+function normalize(mode, j) {
+  const { q, vals } = decode(j);
+  const s = { mode, raw: j, q, vals, t0: j.t0, step: j.step_s, rows: j.rows, price0: j.price0, bin: j.bin, generated: j.generated };
+  if (mode === "liq") {
+    s.cols = j.hours; s.layers = j.tiers; s.candles = j.candles;
+    s.ref = j.candles.close;  // precio de referencia de cada columna (separa los dos lados)
+    s.bubbles = j.realized.map(([c, r, u, long]) => [c, r, u, long ? 0 : 1]);  // 0 = color de largos
+  } else {
+    s.cols = j.cols; s.layers = j.layers; s.mids = j.mids;
+    s.ref = j.mids.spot.map((x, i) => x != null ? x : j.mids.perp[i]);
+    s.bubbles = j.whales.map(([c, r, u, buy]) => [c, r, u, buy]);  // 1 = compra (celeste)
+  }
+  return s;
+}
+
+async function fetchMode(mode) {
+  const r = await fetch(DATA + MODES[mode].file, { cache: "no-store" });
+  if (!r.ok) throw new Error(r.status === 404 ? "todavía no hay datos: se arma a los pocos minutos de arrancar la captura" : `HTTP ${r.status}`);
+  return normalize(mode, await r.json());
+}
+
+async function show(mode, reload = false) {
+  st.mode = mode; save();
+  history.replaceState(null, "", mode === "book" ? "#libro" : "#liquidaciones");
+  document.querySelectorAll("#mode button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.m === mode));
+  setupControls();
+  el("err").hidden = true; canvas.hidden = false;
+  try {
+    if (!st.liq) st.liq = await fetch(DATA + "liquidity.json", { cache: "no-store" }).then((r) => r.ok ? r.json() : null).catch(() => null);
+    if (reload || !st.cache[mode]) st.cache[mode] = await fetchMode(mode);
+  } catch (e) {
+    if (st.mode !== mode) return;
+    canvas.hidden = true; el("stats").innerHTML = "";
+    el("err").hidden = false; el("err").textContent = `No se pudo cargar el mapa: ${e.message}.`;
+    return;
+  }
+  if (st.mode !== mode) return;  // el usuario cambió de mapa mientras cargaba
+  const prev = st.src;
+  st.src = st.cache[mode];
+  const s = st.src;
+  if (!st.layersOn[mode] || st.layersOn[mode].length !== s.layers.length) st.layersOn[mode] = s.layers.map(() => true);
+  el("layers").innerHTML = s.layers.map((t, i) => `<button data-i="${i}" aria-pressed="${st.layersOn[mode][i]}">${t}</button>`).join("");
+  el("model").textContent = mode === "liq" ? s.raw.model : "";
+  el("updated").textContent = `actualizado ${new Date(s.generated * 1000).toLocaleString("es-AR", { hour12: false })} · ejes en UTC`;
   recompute();
-  if (st.view) { clampView(); requestDraw(); } else setWindow(DEFAULT_DAYS);  // la recarga automática no cambia el zoom
+  if (reload && prev && prev.mode === mode && st.view) {  // la recarga automática no cambia el zoom
+    const shift = (prev.t0 - s.t0) / s.step;
+    st.view.c0 += shift; st.view.c1 += shift; clampView(); requestDraw();
+  } else setWindow(MODES[mode].defaultCols);
   stats();
 }
 
-// suma de los tramos de apalancamiento elegidos: sum[col * rows + row]
+function setupControls() {
+  const m = MODES[st.mode];
+  el("win").innerHTML = m.windows.map(([c, l]) => `<button data-c="${c}">${l}</button>`).join("");
+  el("layers-lbl").textContent = m.layersLbl;
+  el("side-below").textContent = m.below; el("side-above").textContent = m.above;
+  el("t-price-lbl").textContent = m.priceLbl; el("t-bubbles-lbl").textContent = m.bubblesLbl;
+  el("b0-lbl").textContent = m.b0; el("b1-lbl").textContent = m.b1; el("scale-lbl").textContent = m.scaleLbl;
+  el("notes-liq").hidden = st.mode !== "liq"; el("notes-book").hidden = st.mode !== "book";
+}
+
+// suma de las capas elegidas: sum[col * rows + row]
 function recompute() {
-  const { hours, rows } = st.hm, plane = hours * rows;
+  const s = st.src, plane = s.cols * s.rows, on = st.layersOn[st.mode];
   st.sum = new Float32Array(plane);
-  st.hm.tiers.forEach((_, t) => {
-    if (!st.tiersOn[t]) return;
+  s.layers.forEach((_, t) => {
+    if (!on[t]) return;
     const base = t * plane;
-    for (let i = 0; i < plane; i++) { const q = st.q[base + i]; if (q) st.sum[i] += st.vals[q]; }
+    for (let i = 0; i < plane; i++) { const q = s.q[base + i]; if (q) st.sum[i] += s.vals[q]; }
   });
   st.imgKey = "";
 }
-const cell = (col, row) => st.sum[col * st.hm.rows + row];
-const tierCell = (t, col, row) => st.vals[st.q[(t * st.hm.hours + col) * st.hm.rows + row]];
-const closeAt = (col) => st.hm.candles.close[col];
+const cell = (col, row) => st.sum[col * st.src.rows + row];
+const layerCell = (t, col, row) => st.src.vals[st.src.q[(t * st.src.cols + col) * st.src.rows + row]];
+const rowPrice = (r) => st.src.price0 + (r + 0.5) * st.src.bin;
+const fmtT = (ts) => {
+  const d = new Date(ts * 1000);
+  return `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+};
+// ¿el tramo va con el lado elegido? (abajo / arriba del precio de esa columna)
+function keepSide(col, row) {
+  if (st.side === "both") return true;
+  const ref = st.src.ref[col];
+  if (ref == null) return true;
+  return st.side === "below" ? rowPrice(row) < ref : rowPrice(row) > ref;
+}
 
-function setWindow(days) {
-  const hm = st.hm, c = hm.candles, c1 = hm.hours, c0 = Math.max(0, c1 - days * 24);
+function setWindow(cols) {
+  const s = st.src, c1 = s.cols, c0 = Math.max(0, c1 - cols);
   let lo = Infinity, hi = -Infinity;
-  for (let i = c0; i < c1; i++) { if (c.low[i] != null) lo = Math.min(lo, c.low[i]); if (c.high[i] != null) hi = Math.max(hi, c.high[i]); }
-  const pad = (hi - lo) * 0.6 + hi * 0.01;
+  if (s.candles) {
+    for (let i = c0; i < c1; i++) { if (s.candles.low[i] != null) lo = Math.min(lo, s.candles.low[i]); if (s.candles.high[i] != null) hi = Math.max(hi, s.candles.high[i]); }
+  } else for (let i = c0; i < c1; i++) if (s.ref[i] != null) { lo = Math.min(lo, s.ref[i]); hi = Math.max(hi, s.ref[i]); }
+  if (!isFinite(lo)) { lo = s.price0; hi = s.price0 + s.rows * s.bin; }
+  // libro: hasta donde llega el spot (~1 %); liquidaciones: más aire para ver las franjas
+  const pad = s.mode === "book" ? Math.max((hi - lo) * 0.3, hi * 0.004) : (hi - lo) * 0.6 + hi * 0.01;
   st.view = { c0, c1: c1 + Math.max(1, (c1 - c0) * 0.02), p0: lo - pad, p1: hi + pad };
   clampView();
-  document.querySelectorAll("#win button").forEach((b) => b.setAttribute("aria-pressed", +b.dataset.d === days));
-  st.imgKey = ""; draw();
+  document.querySelectorAll("#win button").forEach((b) => b.setAttribute("aria-pressed", +b.dataset.c === cols));
+  st.imgKey = ""; requestDraw();
 }
 
 function clampView() {
-  const v = st.view, hm = st.hm, pMin = hm.price0, pMax = hm.price0 + hm.rows * hm.bin;
-  const w = Math.min(Math.max(v.c1 - v.c0, 6), hm.hours + 10);
+  const v = st.view, s = st.src, pMin = s.price0, pMax = s.price0 + s.rows * s.bin;
+  const w = Math.min(Math.max(v.c1 - v.c0, 2), s.cols * 1.05);
+  const extra = Math.max(0.5, w * 0.05);  // aire a la derecha del último dato, proporcional a lo que se ve
   if (v.c0 < 0) { v.c0 = 0; v.c1 = w; }
-  if (v.c1 > hm.hours + 10) { v.c1 = hm.hours + 10; v.c0 = v.c1 - w; }
+  if (v.c1 > s.cols + extra) { v.c1 = s.cols + extra; v.c0 = v.c1 - w; }
   v.c1 = v.c0 + w;
-  const h = Math.min(Math.max(v.p1 - v.p0, hm.bin * 8), pMax - pMin);
+  const h = Math.min(Math.max(v.p1 - v.p0, s.bin * 8), Math.max(pMax - pMin, s.bin * 8));
   if (v.p0 < pMin) { v.p0 = pMin; v.p1 = pMin + h; }
   if (v.p1 > pMax) { v.p1 = pMax; v.p0 = pMax - h; }
   v.p1 = v.p0 + h;
@@ -291,35 +379,30 @@ const colOf = (d, x) => st.view.c0 + (x - d.x0) / (d.x1 - d.x0) * (st.view.c1 - 
 const yOf = (d, p) => d.y0 + (st.view.p1 - p) / (st.view.p1 - st.view.p0) * (d.y1 - d.y0);
 const pOf = (d, y) => st.view.p1 - (y - d.y0) / (d.y1 - d.y0) * (st.view.p1 - st.view.p0);
 
-// imagen del mapa (1 px por hora y tramo), normalizada al máximo de lo visible
+// imagen del mapa (1 px por columna y tramo), normalizada al máximo de lo visible
 function buildImage() {
-  const hm = st.hm, v = st.view, rows = hm.rows;
-  const cA = Math.max(0, Math.floor(v.c0)), cB = Math.min(hm.hours, Math.ceil(v.c1));
-  const rA = Math.max(0, Math.floor((v.p0 - hm.price0) / hm.bin)), rB = Math.min(rows, Math.ceil((v.p1 - hm.price0) / hm.bin));
-  const key = [cA, cB, rA, rB, st.side, st.scale, st.gain, st.tiersOn.join()].join("|");
+  const s = st.src, v = st.view, rows = s.rows;
+  const cA = Math.max(0, Math.floor(v.c0)), cB = Math.min(s.cols, Math.ceil(v.c1));
+  const rA = Math.max(0, Math.floor((v.p0 - s.price0) / s.bin)), rB = Math.min(rows, Math.ceil((v.p1 - s.price0) / s.bin));
+  const key = [s.mode, s.generated, cA, cB, rA, rB, st.side, st.scale, st.gain, st.layersOn[st.mode].join()].join("|");
   if (key === st.imgKey) return;
   st.imgKey = key;
-  const keep = (col, row) => {
-    if (st.side === "both") return true;
-    const p = hm.price0 + (row + 0.5) * hm.bin, c = closeAt(col);
-    return st.side === "long" ? p < c : p > c;
-  };
   let max = 0;
-  for (let c = cA; c < cB; c++) for (let r = rA; r < rB; r++) { const x = cell(c, r); if (x > max && keep(c, r)) max = x; }
+  for (let c = cA; c < cB; c++) for (let r = rA; r < rB; r++) { const x = cell(c, r); if (x > max && keepSide(c, r)) max = x; }
   st.max = max || 1;
-  off.width = hm.hours; off.height = rows;
-  const img = offCtx.createImageData(hm.hours, rows), px = img.data;
-  const lmax = Math.log10(st.max), span = 1.8;  // la escala log cubre ~2 órdenes de magnitud debajo del máximo: lo menor queda oscuro
-  for (let c = 0; c < hm.hours; c++) {
+  off.width = s.cols; off.height = rows;
+  const img = offCtx.createImageData(s.cols, rows), px = img.data;
+  const lmax = Math.log10(st.max), span = 1.8;  // la escala log cubre ~2 órdenes de magnitud debajo del máximo
+  for (let c = 0; c < s.cols; c++) {
     for (let r = 0; r < rows; r++) {
       const x = cell(c, r);
       let u = 0;
-      if (x > 0 && keep(c, r)) {
+      if (x > 0 && keepSide(c, r)) {
         u = st.scale === "log" ? (Math.log10(x) - (lmax - span)) / span : x / st.max;
         u = Math.min(1, Math.max(0, u * st.gain));
         if (st.scale === "lin") u = Math.sqrt(u);  // que lo mediano no desaparezca del todo
       }
-      const k = Math.round(u * 255) * 4, o = ((rows - 1 - r) * hm.hours + c) * 4;
+      const k = Math.round(u * 255) * 4, o = ((rows - 1 - r) * s.cols + c) * 4;
       px[o] = LUT[k]; px[o + 1] = LUT[k + 1]; px[o + 2] = LUT[k + 2]; px[o + 3] = 255;
     }
   }
@@ -328,46 +411,47 @@ function buildImage() {
 
 function niceStep(range, target) {
   const raw = range / target, p = 10 ** Math.floor(Math.log10(raw));
-  return [1, 2, 2.5, 5, 10].map((m) => m * p).find((s) => s >= raw);
+  return [1, 2, 2.5, 5, 10].map((m) => m * p).find((x) => x >= raw);
 }
+const TICKS_S = [60, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200, 86400, 172800, 345600, 604800];
 
 function draw() {
-  if (!st.hm) return;
+  if (!st.src || canvas.hidden) return;
   const dpr = window.devicePixelRatio || 1;
   const W = canvas.clientWidth, H = canvas.clientHeight;
   if (canvas.width !== Math.round(W * dpr) || canvas.height !== Math.round(H * dpr)) {
     canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
   }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  const d = dims(), hm = st.hm, v = st.view;
+  const d = dims(), s = st.src, v = st.view;
   ctx.fillStyle = css("--heat-bg"); ctx.fillRect(0, 0, W, H);
   buildImage();
 
-  // mapa
   ctx.save();
   ctx.beginPath(); ctx.rect(d.x0, d.y0, d.x1 - d.x0, d.y1 - d.y0); ctx.clip();
   ctx.imageSmoothingEnabled = false;
-  const sy = hm.rows - (v.p1 - hm.price0) / hm.bin, sh = (v.p1 - v.p0) / hm.bin;
+  const sy = s.rows - (v.p1 - s.price0) / s.bin, sh = (v.p1 - v.p0) / s.bin;
   ctx.drawImage(off, v.c0, sy, v.c1 - v.c0, sh, d.x0, d.y0, d.x1 - d.x0, d.y1 - d.y0);
 
-  // grilla y ejes
+  // grilla
   ctx.strokeStyle = css("--heat-grid"); ctx.lineWidth = 1;
   const pStep = niceStep(v.p1 - v.p0, Math.max(4, (d.y1 - d.y0) / 55));
   for (let p = Math.ceil(v.p0 / pStep) * pStep; p <= v.p1; p += pStep) {
     const y = Math.round(yOf(d, p)) + 0.5; ctx.beginPath(); ctx.moveTo(d.x0, y); ctx.lineTo(d.x1, y); ctx.stroke();
   }
-  const hoursVis = v.c1 - v.c0, tStepH = [1, 2, 3, 6, 12, 24, 48, 96, 168].find((s) => hoursVis / s <= Math.max(3, (d.x1 - d.x0) / 90)) || 168;
+  const visS = (v.c1 - v.c0) * s.step, maxTicks = Math.max(3, (d.x1 - d.x0) / 90);
+  const tStep = TICKS_S.find((x) => x >= s.step && visS / x <= maxTicks) || 604800;
   const tTicks = [];
   for (let c = Math.ceil(v.c0); c <= v.c1; c++) {
-    const ts = hm.t0 + c * hm.step_s;
-    if ((ts / 3600) % tStepH === 0) { tTicks.push([c, ts]); const x = Math.round(xOf(d, c)) + 0.5; ctx.beginPath(); ctx.moveTo(x, d.y0); ctx.lineTo(x, d.y1); ctx.stroke(); }
+    const ts = s.t0 + c * s.step;
+    if (ts % tStep === 0) { tTicks.push([c, ts]); const x = Math.round(xOf(d, c)) + 0.5; ctx.beginPath(); ctx.moveTo(x, d.y0); ctx.lineTo(x, d.y1); ctx.stroke(); }
   }
 
-  // velas
-  const c = hm.candles, bw = (d.x1 - d.x0) / hoursVis;
-  if (st.show.candles) {
-    const up = css("--candle-up"), dn = css("--candle-down");
-    for (let i = Math.max(0, Math.floor(v.c0)); i < Math.min(c.t.length, Math.ceil(v.c1)); i++) {
+  const cA = Math.max(0, Math.floor(v.c0)), cB = Math.min(s.cols, Math.ceil(v.c1)), bw = (d.x1 - d.x0) / (v.c1 - v.c0);
+  // velas (liquidaciones) o precio medio (libro)
+  if (st.show.price && s.candles) {
+    const up = css("--candle-up"), dn = css("--candle-down"), c = s.candles;
+    for (let i = cA; i < Math.min(c.t.length, cB); i++) {
       if (c.close[i] == null) continue;
       const x = xOf(d, i + 0.5), col = c.close[i] >= c.open[i] ? up : dn;
       ctx.strokeStyle = col; ctx.fillStyle = col;
@@ -378,16 +462,32 @@ function draw() {
       }
     }
   }
+  if (st.show.price && s.mids) {
+    for (const [mk, color, w] of [["perp", "rgba(255,255,255,0.55)", 1], ["spot", "#ffffff", 1.6]]) {
+      const arr = s.mids[mk];
+      ctx.strokeStyle = color; ctx.lineWidth = w; ctx.beginPath();
+      let pen = false;
+      for (let i = cA; i < cB; i++) {
+        if (arr[i] == null) { pen = false; continue; }
+        const x = xOf(d, i + 0.5), y = yOf(d, arr[i]);
+        if (pen) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+        pen = true;
+      }
+      ctx.stroke();
+    }
+    ctx.lineWidth = 1;
+  }
 
-  // liquidaciones reales
-  if (st.show.real && hm.realized.length) {
-    for (const [col, row, usd, isLong] of hm.realized) {
+  // burbujas: liquidaciones reales o ballenas
+  if (st.show.bubbles && s.bubbles.length) {
+    const scale = s.mode === "book" ? 4e5 : 1.5e5;
+    for (const [col, row, usd, kind] of s.bubbles) {
       if (col < v.c0 - 1 || col > v.c1) continue;
-      const p = hm.price0 + (row + 0.5) * hm.bin;
+      const p = rowPrice(row);
       if (p < v.p0 || p > v.p1) continue;
-      const r = Math.min(9, 1 + Math.sqrt(usd / 1.5e5) * 2);
+      const r = Math.min(s.mode === "book" ? 12 : 9, 1 + Math.sqrt(usd / scale) * 2);
       ctx.beginPath(); ctx.arc(xOf(d, col + 0.5), yOf(d, p), r, 0, 2 * Math.PI);
-      ctx.fillStyle = isLong ? css("--liq-long") : css("--liq-short");
+      ctx.fillStyle = kind ? css("--liq-short") : css("--liq-long");
       ctx.globalAlpha = 0.7; ctx.fill(); ctx.globalAlpha = 1;
       if (r > 5) { ctx.strokeStyle = "rgba(255,255,255,0.8)"; ctx.stroke(); }
     }
@@ -408,18 +508,16 @@ function draw() {
     }
     ctx.setLineDash([]);
   }
-
-  // precio actual
-  const last = c.close[c.close.length - 1];
   ctx.restore();
-  const yLast = yOf(d, last);
 
-  // perfil de la hora señalada (o la última)
   if (d.prof) drawProfile(d);
 
-  // eje de precios
+  // eje de precios y precio actual
   ctx.fillStyle = css("--heat-text"); ctx.font = "11px system-ui, sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
   for (let p = Math.ceil(v.p0 / pStep) * pStep; p <= v.p1; p += pStep) ctx.fillText(fmtP(p), d.x1 + d.prof + 8, yOf(d, p));
+  let last = null;
+  for (let i = s.cols - 1; i >= 0 && last == null; i--) last = s.ref[i];
+  const yLast = last == null ? -1 : yOf(d, last);
   if (yLast >= d.y0 && yLast <= d.y1) {
     ctx.strokeStyle = "rgba(255,255,255,0.8)"; ctx.setLineDash([2, 3]);
     ctx.beginPath(); ctx.moveTo(d.x0, Math.round(yLast) + 0.5); ctx.lineTo(d.x1 + d.prof, Math.round(yLast) + 0.5); ctx.stroke(); ctx.setLineDash([]);
@@ -430,11 +528,11 @@ function draw() {
   ctx.fillStyle = css("--heat-text"); ctx.font = "11px system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "top";
   for (const [col, ts] of tTicks) {
     const dt = new Date(ts * 1000);
-    const lab = dt.getUTCHours() === 0 ? `${pad(dt.getUTCDate())}/${pad(dt.getUTCMonth() + 1)}` : `${pad(dt.getUTCHours())}:00`;
+    const lab = dt.getUTCHours() === 0 && dt.getUTCMinutes() === 0 ? `${pad(dt.getUTCDate())}/${pad(dt.getUTCMonth() + 1)}`
+      : `${pad(dt.getUTCHours())}:${pad(dt.getUTCMinutes())}`;
     ctx.fillText(lab, xOf(d, col), d.y1 + 6);
   }
 
-  // cruz
   if (st.hover) {
     ctx.strokeStyle = "rgba(255,255,255,0.45)"; ctx.setLineDash([3, 3]);
     ctx.beginPath(); ctx.moveTo(st.hover.x + 0.5, d.y0); ctx.lineTo(st.hover.x + 0.5, d.y1);
@@ -443,92 +541,118 @@ function draw() {
   drawScale();
 }
 
+// perfil de la columna señalada (o la última con datos)
 function drawProfile(d) {
-  const hm = st.hm, v = st.view;
-  const col = st.hover && st.hover.col != null ? st.hover.col : hm.hours - 1;
-  const x0 = d.x1 + 2, w = d.prof - 6, close = closeAt(col);
-  const rA = Math.max(0, Math.floor((v.p0 - hm.price0) / hm.bin)), rB = Math.min(hm.rows, Math.ceil((v.p1 - hm.price0) / hm.bin));
-  let max = 0;
-  for (let r = rA; r < rB; r++) max = Math.max(max, cell(col, r));
+  const s = st.src, v = st.view;
+  let col = st.hover && st.hover.col != null ? st.hover.col : s.cols - 1;
+  if (!(st.hover && st.hover.col != null)) while (col > 0 && s.ref[col] == null) col--;
+  const x0 = d.x1 + 2, w = d.prof - 6, ref = s.ref[col];
+  const rA = Math.max(0, Math.floor((v.p0 - s.price0) / s.bin)), rB = Math.min(s.rows, Math.ceil((v.p1 - s.price0) / s.bin));
   ctx.fillStyle = "rgba(255,255,255,0.03)"; ctx.fillRect(x0, d.y0, w, d.y1 - d.y0);
-  if (!max) return;
-  const top = [];
-  for (let r = rA; r < rB; r++) {
-    const x = cell(col, r); if (!x) continue;
-    const p = hm.price0 + r * hm.bin, ya = yOf(d, p + hm.bin), yb = yOf(d, p);
-    const len = x / max * w, isLong = p + hm.bin / 2 < close;
-    if (st.side !== "both" && (st.side === "long") !== isLong) continue;
-    ctx.fillStyle = isLong ? css("--liq-long") : css("--liq-short");
-    ctx.globalAlpha = 0.75; ctx.fillRect(x0, ya, len, Math.max(1, yb - ya - (yb - ya > 3 ? 1 : 0))); ctx.globalAlpha = 1;
-    top.push([x, (ya + yb) / 2, len]);
+  let max = 0;
+  for (let r = rA; r < rB; r++) if (keepSide(col, r)) max = Math.max(max, cell(col, r));
+  if (max) {
+    const top = [];
+    for (let r = rA; r < rB; r++) {
+      const x = cell(col, r); if (!x || !keepSide(col, r)) continue;
+      const p = s.price0 + r * s.bin, ya = yOf(d, p + s.bin), yb = yOf(d, p);
+      const len = x / max * w, below = ref != null && p + s.bin / 2 < ref;
+      ctx.fillStyle = below ? css("--liq-long") : css("--liq-short");
+      ctx.globalAlpha = 0.75; ctx.fillRect(x0, ya, len, Math.max(1, yb - ya - (yb - ya > 3 ? 1 : 0))); ctx.globalAlpha = 1;
+      top.push([x, (ya + yb) / 2, len]);
+    }
+    top.sort((a, b) => b[0] - a[0]);
+    ctx.font = "10px system-ui, sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillStyle = "#fff";
+    for (const [x, y, len] of top.slice(0, 4)) ctx.fillText(fmtUsd(x).replace("US$ ", ""), x0 + Math.min(len, w - 44) + 3, y);
   }
-  top.sort((a, b) => b[0] - a[0]);
-  ctx.font = "10px system-ui, sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillStyle = "#fff";
-  for (const [x, y, len] of top.slice(0, 4)) ctx.fillText(fmtUsd(x).replace("US$ ", ""), x0 + Math.min(len, w - 44) + 3, y);
-  ctx.fillStyle = css("--heat-text"); ctx.textBaseline = "top"; ctx.textAlign = "left";
-  ctx.fillText(st.hover && st.hover.col != null ? fmtT(hm.t0 + col * hm.step_s) : "ahora", x0 + 4, d.y0 + 4);
+  ctx.fillStyle = css("--heat-text"); ctx.font = "10px system-ui, sans-serif"; ctx.textBaseline = "top"; ctx.textAlign = "left";
+  ctx.fillText(st.hover && st.hover.col != null ? fmtT(s.t0 + col * s.step) : "ahora", x0 + 4, d.y0 + 4);
 }
 
 function drawScale() {
-  const sc = document.getElementById("scale-bar"), g = sc.getContext("2d"), img = g.createImageData(220, 10);
+  const sc = el("scale-bar"), g = sc.getContext("2d"), img = g.createImageData(220, 10);
   for (let x = 0; x < 220; x++) {
     const k = Math.round(x / 219 * 255) * 4;
-    for (let y = 0; y < 10; y++) { const o = (y * 220 + x) * 4; img.data.set(LUT.subarray(k, k + 4), o); }
+    for (let y = 0; y < 10; y++) img.data.set(LUT.subarray(k, k + 4), (y * 220 + x) * 4);
   }
   g.putImageData(img, 0, 0);
-  document.getElementById("scale-max").textContent = `· máximo en lo visible ${fmtUsd(st.max || 0)} por tramo de US$ ${nf(0).format(st.hm.bin)}`
+  el("scale-max").textContent = `· máximo en lo visible ${fmtUsd(st.max || 0)} por tramo de US$ ${nf(0).format(st.src.bin)}`
     + (st.scale === "log" ? " (escala log)" : "");
 }
 
 // ---- resumen de ahora ----
 function stats() {
-  const hm = st.hm, col = hm.hours - 1, price = closeAt(col);
-  const within = (pct, long) => {
-    let s = 0;
-    for (let r = 0; r < hm.rows; r++) {
-      const p = hm.price0 + (r + 0.5) * hm.bin, dist = (p / price - 1) * 100;
-      if (long ? dist < 0 && dist >= -pct : dist > 0 && dist <= pct) for (let t = 0; t < hm.tiers.length; t++) s += tierCell(t, col, r);
+  const s = st.src;
+  let col = s.cols - 1;
+  while (col > 0 && s.ref[col] == null) col--;
+  const price = s.ref[col], all = (r) => s.layers.reduce((a, _, t) => a + layerCell(t, col, r), 0);
+  const within = (pct, below) => {
+    let x = 0;
+    for (let r = 0; r < s.rows; r++) {
+      const dist = (rowPrice(r) / price - 1) * 100;
+      if (below ? dist < 0 && dist >= -pct : dist > 0 && dist <= pct) x += all(r);
     }
-    return s;
+    return x;
   };
-  // franja más grande de cada lado, sumando tramos de 0,5 % (como el mapa del panel)
-  const biggest = (long) => {
-    const w = Math.max(1, Math.round(price * 0.005 / hm.bin));
+  // franja mayor de cada lado, sumando tramos vecinos (0,5 % en liquidaciones, US$ 50 en el libro)
+  const biggest = (below) => {
+    const w = s.mode === "liq" ? Math.max(1, Math.round(price * 0.005 / s.bin)) : 5;
     let best = null;
-    for (let r = 0; r + w <= hm.rows; r++) {
-      const pc = hm.price0 + (r + w / 2) * hm.bin;
-      if (long ? pc >= price : pc <= price) continue;
-      let s = 0; for (let k = r; k < r + w; k++) for (let t = 0; t < hm.tiers.length; t++) s += tierCell(t, col, k);
-      if (!best || s > best.s) best = { s, p: pc };
+    for (let r = 0; r + w <= s.rows; r++) {
+      const pc = s.price0 + (r + w / 2) * s.bin;
+      if (below ? pc >= price : pc <= price) continue;
+      let x = 0; for (let k = r; k < r + w; k++) x += all(k);
+      if (!best || x > best.x) best = { x, p: pc };
     }
     return best;
   };
-  const bl = biggest(true), bs = biggest(false);
-  const tile = (k, v, s) => `<div class="card stat"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`;
-  const dist = (p) => `${nf(1).format((p / price - 1) * 100)} %`;
-  document.getElementById("stats").innerHTML =
-    tile("Precio (perpetuo, cierre 1 h)", fmtP(price), fmtT(hm.t0 + col * hm.step_s) + " UTC")
-    + tile("Cortos a liquidar hasta +2 %", fmtUsd(within(2, false)), `hasta +5 %: ${fmtUsd(within(5, false))}`)
-    + tile("Largos a liquidar hasta −2 %", fmtUsd(within(2, true)), `hasta −5 %: ${fmtUsd(within(5, true))}`)
-    + (bs ? tile("Franja mayor arriba (0,5 %)", fmtP(bs.p), `${fmtUsd(bs.s)} · ${dist(bs.p)}`) : "")
-    + (bl ? tile("Franja mayor abajo (0,5 %)", fmtP(bl.p), `${fmtUsd(bl.s)} · ${dist(bl.p)}`) : "");
+  const tile = (k, v, sub) => `<div class="card stat"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${sub}</div></div>`;
+  const dist = (p) => `${nf(2).format((p / price - 1) * 100)} %`;
+  const bl = biggest(true), ba = biggest(false);
+  if (s.mode === "liq") {
+    el("stats").innerHTML =
+      tile("Precio (perpetuo, cierre 1 h)", fmtP(price), fmtT(s.t0 + col * s.step) + " UTC")
+      + tile("Cortos a liquidar hasta +2 %", fmtUsd(within(2, false)), `hasta +5 %: ${fmtUsd(within(5, false))}`)
+      + tile("Largos a liquidar hasta −2 %", fmtUsd(within(2, true)), `hasta −5 %: ${fmtUsd(within(5, true))}`)
+      + (ba ? tile("Franja mayor arriba (0,5 %)", fmtP(ba.p), `${fmtUsd(ba.x)} · ${dist(ba.p)}`) : "")
+      + (bl ? tile("Franja mayor abajo (0,5 %)", fmtP(bl.p), `${fmtUsd(bl.x)} · ${dist(bl.p)}`) : "");
+  } else {
+    el("stats").innerHTML =
+      tile("Precio medio (spot)", fmtP(price), fmtT(s.t0 + col * s.step) + " UTC")
+      + tile("Compras límite hasta −0,5 %", fmtUsd(within(0.5, true)), `spot y perpetuo · hasta −1 %: ${fmtUsd(within(1, true))}`)
+      + tile("Ventas límite hasta +0,5 %", fmtUsd(within(0.5, false)), `spot y perpetuo · hasta +1 %: ${fmtUsd(within(1, false))}`)
+      + (bl ? tile("Muro mayor abajo (US$ 50)", fmtP(bl.p), `${fmtUsd(bl.x)} · ${dist(bl.p)}`) : "")
+      + (ba ? tile("Muro mayor arriba (US$ 50)", fmtP(ba.p), `${fmtUsd(ba.x)} · ${dist(ba.p)}`) : "");
+  }
 }
 
 // ---- tooltip ----
-function tooltip(d) {
-  const tip = document.getElementById("tip"), h = st.hover;
-  if (!h || h.col == null) { tip.hidden = true; return; }
-  const hm = st.hm, col = h.col, row = Math.floor((h.price - hm.price0) / hm.bin);
-  if (row < 0 || row >= hm.rows) { tip.hidden = true; return; }
-  const lo = hm.price0 + row * hm.bin, c = hm.candles, tiers = hm.tiers.map((t, i) => [t, tierCell(i, col, row)]);
-  const total = tiers.reduce((a, [, x], i) => a + (st.tiersOn[i] ? x : 0), 0);
-  const real = hm.realized.filter(([cc, rr]) => cc === col && rr === row).reduce((a, x) => a + x[2], 0);
-  const side = lo + hm.bin / 2 < c.close[col] ? "largos" : "cortos";
-  tip.innerHTML = `<div><b>${fmtT(hm.t0 + col * hm.step_s)} UTC</b> · ${fmtP(lo)} – ${fmtP(lo + hm.bin)}</div>`
-    + `<div class="row"><span>${side} a liquidar (estimado)</span><b>${total ? fmtUsd(total) : "–"}</b></div>`
-    + tiers.filter(([, x]) => x).map(([t, x], i) => `<div class="row" style="opacity:${st.tiersOn[hm.tiers.indexOf(t)] ? 1 : 0.45}"><span>· ${t}</span><span>${fmtUsd(x)}</span></div>`).join("")
-    + (real ? `<div class="row"><span>liquidado de verdad en esa hora</span><b>${fmtUsd(real)}</b></div>` : "")
-    + (c.close[col] != null ? `<div class="muted" style="color:#b9b7c9">vela: A ${fmtP(c.open[col])} · M ${fmtP(c.high[col])} · m ${fmtP(c.low[col])} · C ${fmtP(c.close[col])}</div>` : "");
+function tooltip() {
+  const tip = el("tip"), h = st.hover, s = st.src;
+  if (!h || h.col == null || !s) { tip.hidden = true; return; }
+  const col = h.col, row = Math.floor((h.price - s.price0) / s.bin);
+  if (row < 0 || row >= s.rows) { tip.hidden = true; return; }
+  const lo = s.price0 + row * s.bin, on = st.layersOn[st.mode], m = MODES[st.mode];
+  const parts = s.layers.map((t, i) => [t, layerCell(i, col, row), on[i]]);
+  const total = parts.reduce((a, [, x, o]) => a + (o ? x : 0), 0);
+  const bub = s.bubbles.filter(([c, r]) => c === col && (s.mode === "book" || r === row));
+  const bubUsd = bub.reduce((a, x) => a + x[2], 0);
+  const ref = s.ref[col], side = ref == null ? "below" : lo + s.bin / 2 < ref ? "below" : "above";
+  let html = `<div><b>${fmtT(s.t0 + col * s.step)} UTC</b> · ${fmtP(lo)} – ${fmtP(lo + s.bin)}</div>`
+    + `<div class="row"><span>${m.what(side)}</span><b>${total ? fmtUsd(total) : "–"}</b></div>`
+    + parts.filter(([, x]) => x).map(([t, x, o]) => `<div class="row" style="opacity:${o ? 1 : 0.45}"><span>· ${t}</span><span>${fmtUsd(x)}</span></div>`).join("");
+  if (bubUsd) {
+    if (s.mode === "book") {
+      const buy = bub.filter((x) => x[3]).reduce((a, x) => a + x[2], 0);
+      html += `<div class="row"><span>${m.bubbleWhat}</span><b>${fmtUsd(bubUsd)}</b></div><div class="row"><span>· compras / ventas</span><span>${fmtUsd(buy)} / ${fmtUsd(bubUsd - buy)}</span></div>`;
+    } else html += `<div class="row"><span>${m.bubbleWhat}</span><b>${fmtUsd(bubUsd)}</b></div>`;
+  }
+  if (s.candles && s.candles.close[col] != null) {
+    const c = s.candles;
+    html += `<div style="color:#b9b7c9">vela: A ${fmtP(c.open[col])} · M ${fmtP(c.high[col])} · m ${fmtP(c.low[col])} · C ${fmtP(c.close[col])}</div>`;
+  }
+  if (s.mids) html += `<div style="color:#b9b7c9">medio spot ${s.mids.spot[col] != null ? fmtP(s.mids.spot[col]) : "–"} · perp ${s.mids.perp[col] != null ? fmtP(s.mids.perp[col]) : "–"}</div>`;
+  tip.innerHTML = html;
   tip.hidden = false;
   const box = tip.getBoundingClientRect(), W = canvas.clientWidth;
   let x = h.x + 14, y = h.y + 14;
@@ -541,37 +665,52 @@ function tooltip(d) {
 let drag = null;
 const pinch = new Map();
 canvas.addEventListener("pointerdown", (ev) => {
+  if (!st.src) return;
   canvas.setPointerCapture(ev.pointerId);
   pinch.set(ev.pointerId, ev.offsetX);
-  drag = { x: ev.offsetX, y: ev.offsetY, v: { ...st.view }, onAxis: ev.offsetX > dims().x1 + dims().prof };
+  const d = dims();
+  drag = { x: ev.offsetX, y: ev.offsetY, v: { ...st.view }, onAxis: ev.offsetX > d.x1 + d.prof, onTime: ev.offsetY > d.y1 && ev.offsetX <= d.x1 };
 });
 canvas.addEventListener("pointermove", (ev) => {
+  if (!st.src) return;
   const d = dims();
   if (drag && pinch.size === 2) {  // pellizco: zoom en el tiempo
     const prev = [...pinch.values()]; pinch.set(ev.pointerId, ev.offsetX); const now = [...pinch.values()];
     const f = Math.abs(prev[0] - prev[1]) / Math.max(10, Math.abs(now[0] - now[1]));
-    zoomTime(d, (now[0] + now[1]) / 2, f); return;
+    zoomTime(d, (now[0] + now[1]) / 2, f); unpressWindow(); requestDraw(); return;
   }
   if (drag) {
     const dx = ev.offsetX - drag.x, dy = ev.offsetY - drag.y, v = st.view, o = drag.v;
     if (drag.onAxis) {  // arrastrar el eje de precios: zoom vertical
       const f = Math.exp(dy / 200), mid = (o.p0 + o.p1) / 2, h = (o.p1 - o.p0) * f;
       v.p0 = mid - h / 2; v.p1 = mid + h / 2;
+    } else if (drag.onTime) {  // arrastrar el eje de tiempo: hacia la derecha acerca, hacia la izquierda aleja (fijo el último dato)
+      const f = Math.exp(-dx / 150), a = Math.min(o.c1, st.src.cols);
+      v.c0 = a - (a - o.c0) * f; v.c1 = a + (o.c1 - a) * f;
     } else {
       const dc = dx / (d.x1 - d.x0) * (o.c1 - o.c0), dp = dy / (d.y1 - d.y0) * (o.p1 - o.p0);
       v.c0 = o.c0 - dc; v.c1 = o.c1 - dc; v.p0 = o.p0 + dp; v.p1 = o.p1 + dp;
     }
     clampView(); unpressWindow();
   }
+  canvas.style.cursor = ev.offsetY > d.y1 && ev.offsetX <= d.x1 ? "ew-resize" : ev.offsetX > d.x1 + d.prof ? "ns-resize" : "crosshair";
   hoverAt(d, ev.offsetX, ev.offsetY);
   requestDraw();
 });
 const endDrag = (ev) => { pinch.delete(ev.pointerId); if (!pinch.size) drag = null; };
 canvas.addEventListener("pointerup", endDrag);
 canvas.addEventListener("pointercancel", endDrag);
-canvas.addEventListener("pointerleave", () => { st.hover = null; document.getElementById("tip").hidden = true; requestDraw(); });
-canvas.addEventListener("dblclick", () => setWindow(DEFAULT_DAYS));
+canvas.addEventListener("pointerleave", () => { st.hover = null; el("tip").hidden = true; requestDraw(); });
+canvas.addEventListener("dblclick", () => st.src && setWindow(MODES[st.mode].defaultCols));
+el("zoom-x").onclick = (ev) => {
+  const b = ev.target.closest("button"); if (!b || !st.src) return;
+  const d = dims();
+  // acerca sobre el último dato visible, que es lo que se suele querer mirar
+  const right = Math.min(st.view.c1, st.src.cols), x = xOf(d, right);
+  zoomTime(d, x, b.dataset.z === "in" ? 0.5 : 2); unpressWindow(); requestDraw();
+};
 canvas.addEventListener("wheel", (ev) => {
+  if (!st.src) return;
   ev.preventDefault();
   const d = dims(), f = Math.exp(ev.deltaY * 0.0015);
   if (ev.shiftKey || ev.offsetX > d.x1) {
@@ -590,43 +729,47 @@ function unpressWindow() { document.querySelectorAll("#win button").forEach((b) 
 function hoverAt(d, x, y) {
   if (x < d.x0 || x > d.x1 + d.prof || y < d.y0 || y > d.y1) { st.hover = null; return; }
   const col = x <= d.x1 ? Math.floor(colOf(d, x)) : null;
-  st.hover = { x, y, price: pOf(d, y), col: col != null && col >= 0 && col < st.hm.hours ? col : null };
+  st.hover = { x, y, price: pOf(d, y), col: col != null && col >= 0 && col < st.src.cols ? col : null };
 }
 let pending = false;
 function requestDraw() {
   if (pending) return; pending = true;
-  requestAnimationFrame(() => { pending = false; draw(); tooltip(dims()); });
+  requestAnimationFrame(() => { pending = false; draw(); tooltip(); });
 }
 
-document.getElementById("win").onclick = (ev) => { const b = ev.target.closest("button"); if (b) setWindow(+b.dataset.d); };
-const segPick = (id, key, attr) => {
-  const el = document.getElementById(id);
-  el.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", b.dataset[attr] === st[key]));
-  el.onclick = (ev) => {
+el("mode").onclick = (ev) => { const b = ev.target.closest("button"); if (b && b.dataset.m !== st.mode) { st.hover = null; show(b.dataset.m); } };
+el("win").onclick = (ev) => { const b = ev.target.closest("button"); if (b && st.src) setWindow(+b.dataset.c); };
+el("layers").onclick = (ev) => {
+  const b = ev.target.closest("button"); if (!b) return;
+  const on = st.layersOn[st.mode], i = +b.dataset.i;
+  on[i] = !on[i];
+  if (!on.some(Boolean)) on[i] = true;  // al menos una capa
+  b.setAttribute("aria-pressed", on[i]);
+  recompute(); requestDraw();
+};
+for (const [id, key] of [["side", "side"], ["scale", "scale"]]) {
+  const box = el(id);
+  box.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.s === st[key]));
+  box.onclick = (ev) => {
     const b = ev.target.closest("button"); if (!b) return;
-    st[key] = b.dataset[attr];
-    el.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", x === b));
+    st[key] = b.dataset.s;
+    box.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", x === b));
     st.imgKey = ""; save(); requestDraw();
   };
-};
-segPick("side", "side", "s");
-segPick("scale", "scale", "s");
-const gain = document.getElementById("gain");
-gain.value = st.gain;
-gain.oninput = () => { st.gain = +gain.value; st.imgKey = ""; save(); requestDraw(); };
-for (const k of ["candles", "real", "swing", "profile"]) {
-  const el = document.getElementById("t-" + k);
-  el.checked = st.show[k];
-  el.onchange = () => { st.show[k] = el.checked; save(); requestDraw(); };
+}
+el("gain").value = st.gain;
+el("gain").oninput = () => { st.gain = +el("gain").value; st.imgKey = ""; save(); requestDraw(); };
+for (const k of ["price", "bubbles", "swing", "profile"]) {
+  const box = el("t-" + k);
+  box.checked = st.show[k];
+  box.onchange = () => { st.show[k] = box.checked; save(); requestDraw(); };
 }
 new ResizeObserver(() => requestDraw()).observe(canvas);
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => requestDraw());
 
-load().catch((e) => {
-  document.querySelector(".plot").innerHTML = `<div class="err">No se pudo cargar el mapa (${e.message}). Se arma cada hora con el resto del panel.</div>`;
-});
-// se rearma cada hora a los ~3 minutos: se recarga solo
-setInterval(() => load().catch(() => {}), 15 * 60 * 1000);
+show(st.mode);
+// el libro se rearma cada 5 minutos y las liquidaciones cada hora: se recarga solo, sin cambiar el zoom
+setInterval(() => { delete st.cache[st.mode === "book" ? "liq" : "book"]; show(st.mode, true); }, 5 * 60 * 1000);
 </script>
 </body>
 </html>
