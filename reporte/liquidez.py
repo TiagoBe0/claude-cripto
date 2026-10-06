@@ -116,13 +116,10 @@ def _unswept(df: pd.DataFrame, n: int, highs: bool) -> pd.Series:
     return piv[keep]
 
 
-def swing_pools(d: Path, merge_pct: float = 0.5, top: int = 3) -> dict:
-    """Stops de cortos arriba de máximos no barridos, stops de largos abajo de mínimos no barridos.
-    Pivotes cercanos (< merge_pct) se agrupan: varios máximos iguales concentran más stops."""
-    frames = {"4h": (_read(d / f"{SYMBOL}_4h.csv").iloc[-90 * 6:], 6),   # pivote de ±1 día, 90 días
-              "1d": (_read(d / f"{SYMBOL}_1d.csv").iloc[-365:], 5)}      # pivote de ±5 días, 1 año
-    price = frames["4h"][0].close.iloc[-1]
-    out = {"price": _r(price)}
+def swing_groups(frames: dict, merge_pct: float = 0.5) -> dict:
+    """{"above": [...], "below": [...]}: pivotes sin barrer de cada timeframe (frames = {tf: (velas, n)}),
+    del más cercano al precio al más lejano. Pivotes cercanos (< merge_pct) se agrupan."""
+    out = {}
     for side, highs in (("above", True), ("below", False)):
         pts = pd.concat([_unswept(df, n, highs).to_frame("px").assign(tf=tf) for tf, (df, n) in frames.items()])
         pts = pts.sort_values("px", ascending=highs)  # del más cercano al más lejano
@@ -136,6 +133,18 @@ def swing_pools(d: Path, merge_pct: float = 0.5, top: int = 3) -> dict:
                 g["ref"] = max(g["ref"], row.px) if highs else min(g["ref"], row.px)
             else:
                 groups.append({"ref": row.px, "n": 1, "tf": {row.tf}, "last": ts})
+        out[side] = groups
+    return out
+
+
+def swing_pools(d: Path, merge_pct: float = 0.5, top: int = 3) -> dict:
+    """Stops de cortos arriba de máximos no barridos, stops de largos abajo de mínimos no barridos.
+    Pivotes cercanos (< merge_pct) se agrupan: varios máximos iguales concentran más stops."""
+    frames = {"4h": (_read(d / f"{SYMBOL}_4h.csv").iloc[-90 * 6:], 6),   # pivote de ±1 día, 90 días
+              "1d": (_read(d / f"{SYMBOL}_1d.csv").iloc[-365:], 5)}      # pivote de ±5 días, 1 año
+    price = frames["4h"][0].close.iloc[-1]
+    out = {"price": _r(price)}
+    for side, groups in swing_groups(frames, merge_pct).items():
         out[side] = [{"price": _r(g["ref"]), "distance_pct": _r((g["ref"] / price - 1) * 100, 2),
                       "touches": g["n"], "timeframes": sorted(g["tf"]),
                       "last_pivot": g["last"].strftime("%Y-%m-%d")} for g in groups[:top]]
