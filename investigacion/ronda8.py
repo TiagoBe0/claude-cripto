@@ -26,7 +26,7 @@ from investigacion.estudio import DATA, HOLDOUT, ROOT
 HEDGE = 0.5
 COST_MAKER, COST_TAKER = 0.0002, 0.0005
 SPOT_ENTRY = 0.001  # comprar el spot la primera hora, igual que comprar y mantener
-RULES = dict(pctl=80, hold=24)
+RULES = dict(thr=80, hold=24)
 GRID = [(p, hold) for p in (70, 80, 90) for hold in (12, 24, 48)]
 
 
