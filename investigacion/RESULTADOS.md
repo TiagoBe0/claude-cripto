@@ -154,3 +154,32 @@ Lectura:
 
 **Descartada sin ir al holdout.** "Proyectar medias" queda en el panel como ayuda de lectura (hacia dónde empujan
 las velas que salen del promedio y si se acerca un cruce), no como predicción del precio.
+
+## Ronda 7 (2026-10-05) · exposición a BTC spot según P(movimiento) del ML · NO PASA
+
+`python -m investigacion.ronda7` · reglas registradas antes de correrla (2428e6a) · código verificado contra un
+cálculo a mano (4c7d662) · métricas en `data/research/ronda7.json`.
+
+| 2025-01 → 2025-10-04 | E (modelo) | V (volatilidad 24 h) | Comprar y mantener |
+|---|---|---|---|
+| A ene-may: retorno / Sharpe / caída | +8,1 % / 0,66 / −24,6 % | −8,6 % / −0,29 / −35,7 % | +10,5 % / 0,73 / −30,9 % |
+| B jun-oct: retorno / Sharpe / caída | +8,6 % / 1,08 / −11,7 % | +8,5 % / 0,99 / −11,4 % | +16,8 % / 1,61 / −13,3 % |
+| Total: retorno / Sharpe / caída | +17,6 % / 0,78 / −24,6 % | −0,7 % / 0,16 / −35,7 % | +29,3 % / 0,99 / −30,9 % |
+| Exposición media / cambios / costos | 0,89 / 312 / 15,7 % | 0,91 / 82 / 4,2 % | 1 / 0 / 0,1 % |
+
+Criterios: 1 ✗ (Sharpe menor que comprar y mantener en las dos mitades), 2 ✓ (mejor que V en las dos), 3 ✓ (caída
+−24,6 % contra −30,9 %), 4 ✗ (0 de 9 en la grilla le ganan a comprar y mantener). **Descartada sin ir al holdout.**
+
+Lectura:
+
+- **El modelo sí agrega algo sobre la volatilidad reciente.** AUC para anticipar el movimiento de 4 h: 0,695 contra
+  0,632 de la volatilidad de 24 h, y E le gana a V en las dos mitades. El quintil más alto de P(movimiento) se mueve
+  3,5 veces más que el más bajo (1,05 % contra 0,30 % en 4 h) con un retorno medio parecido (+0,03 % contra −0,01 %):
+  justo lo que hace falta para que bajar la exposición ahí mejore la relación retorno/riesgo.
+- **Lo que lo mata son los costos.** 312 cambios de exposición en 9 meses (más de uno por día) a 0,10 % por lado:
+  15,7 % de costos, más que la diferencia con comprar y mantener.
+- Se informa, calculado **después** de ver el resultado y sin que cambie el veredicto: **sin costos**, E da Sharpe
+  1,08 y 2,10 en las mitades contra 0,73 y 1,62 de comprar y mantener, con caída −21,6 % contra −30,9 %.
+
+Si se sigue por acá, es una hipótesis nueva que nace de mirar esto (optimista por construcción, solo el holdout la
+puede confirmar): la misma señal con mucho menos costo por cambio o muchos menos cambios.
