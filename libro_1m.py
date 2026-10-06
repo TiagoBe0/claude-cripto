@@ -10,6 +10,8 @@ Escribe <data_dir>/BTCUSDT_book_1m.csv, una fila por minuto (timestamp = minuto 
                                        banda, la profundidad de esa banda está subestimada
 para m = spot (5000 niveles, bandas 0,05 / 0,1 / 0,5 %) y perp (1000 niveles, bandas 0,05 / 0,1 %).
 
+Además guarda cada libro nivel por nivel (tramos de US$ 10) para el mapa de calor del libro: libro_niveles.py.
+
 Sirve para ver cuándo se retiran los market makers (bots de alta frecuencia): el libro se adelgaza y el
 spread se abre. Hipótesis P5 y P6 de investigacion/HIPOTESIS.md. No hay historia: solo lo capturado.
 Peso en la API de Binance: 250 + 20 por minuto, lejos del límite de 6000.
@@ -22,6 +24,7 @@ from pathlib import Path
 
 import requests
 
+from libro_niveles import WRITE_EVERY, Niveles
 from storage import Appender
 
 SYMBOL = "BTCUSDT"
@@ -44,7 +47,7 @@ for _m, (_, _, _bands) in BOOKS.items():
 log = logging.getLogger("libro_1m")
 
 
-def measure(url: str, limit: int, bands: tuple) -> list:
+def measure(url: str, limit: int, bands: tuple) -> tuple[list, list, list]:
     r = requests.get(url, params={"symbol": SYMBOL, "limit": limit}, timeout=10)
     r.raise_for_status()
     book = r.json()
@@ -56,28 +59,45 @@ def measure(url: str, limit: int, bands: tuple) -> list:
         out += [round(sum(p * q for p, q in bids if p >= mid * (1 - b)), 0),
                 round(sum(p * q for p, q in asks if p <= mid * (1 + b)), 0)]
     out.append(round(min(mid - bids[-1][0], asks[-1][0] - mid) / mid * 100, 4))
-    return out
+    return out, bids, asks
 
 
-def snapshot() -> list:
+def snapshot(minute: int, niveles: Niveles | None = None) -> list:
     row = []
     for name, (url, limit, bands) in BOOKS.items():
         n = 3 + 2 * len(bands)
         try:
-            row += measure(url, limit, bands)
+            out, bids, asks = measure(url, limit, bands)
         except (requests.RequestException, KeyError, IndexError, ValueError) as e:
             log.warning("%s: %s", name, e)
             row += [""] * n  # vacío = sin dato (no confundir con libro vacío)
+            continue
+        row += out
+        if niveles is not None:
+            try:
+                niveles.add(minute, name, bids, asks)
+            except Exception:  # noqa: BLE001 - el mapa del libro nunca corta la captura de bandas
+                log.exception("%s: nivel por nivel", name)
     return row
 
 
 def main(data_dir: Path) -> None:
+    try:
+        niveles = Niveles(data_dir)
+    except Exception:  # noqa: BLE001
+        log.exception("libro nivel por nivel desactivado")
+        niveles = None
     with Appender(data_dir / f"{SYMBOL}_book_1m.csv", COLUMNS) as app:
         while True:
             # al segundo 2 de cada minuto, para no coincidir con el cierre de vela
             time.sleep(60 - time.time() % 60 + 2)
             minute = int(time.time() // 60 * 60 * 1000)
-            app.write([[minute, *snapshot()]])
+            app.write([[minute, *snapshot(minute, niveles)]])
+            if niveles is not None and (minute // 60_000) % WRITE_EVERY == 0:
+                try:
+                    niveles.write_heatmap()
+                except Exception:  # noqa: BLE001
+                    log.exception("mapa del libro")
 
 
 if __name__ == "__main__":
