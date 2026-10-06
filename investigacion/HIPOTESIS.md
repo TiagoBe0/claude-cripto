@@ -392,3 +392,49 @@ Qué se vio antes de registrar (para juzgar el sesgo):
 Solo si pasa: 2025-10-05 → 2026-10-04 con las mismas reglas. Pasa si el Sharpe de E es mayor o igual que el de
 comprar y mantener **y** mayor que el de V, con caída máxima menor que la de comprar y mantener. Si pasa, va al panel
 como "exposición sugerida" y al paper trading, no a plata real. Si no, se descarta sin ajustar.
+
+---
+
+# Ronda 8 · cobertura con el perpetuo según P(movimiento) del ML (registrada el 2026-10-05, antes de correrla)
+
+**Nace de mirar la ronda 7**, y eso hay que tenerlo presente al leer el resultado. En la ronda 7 la señal funcionó
+(el modelo le ganó a la volatilidad simple y, sin costos, mejoraba el Sharpe de comprar y mantener en las dos
+mitades), pero 312 cambios a 0,10 % por lado se comieron todo. Esta ronda prueba la misma señal implementada más
+barata. El período de investigación es **el mismo** de la ronda 7, ya visto: el resultado ahí va a ser optimista
+por construcción y **solo el holdout decide**.
+
+## Estrategia
+
+- **100 % en BTC spot todo el tiempo** (se compra una vez, como comprar y mantener).
+- La exposición se baja con un **corto en el perpetuo BTCUSDT** por el **50 %** del capital, en vez de vender spot.
+  Exposición neta = 100 % − cobertura.
+- Señal: la misma P(movimiento) walk-forward de la ronda 7 (`investigacion.ronda7.load`, sin cambios) y su
+  percentil a 90 días. Cobertura activa si en alguna de las **últimas 24 horas** el percentil fue ≥ **80** (en la
+  ronda 7 eran 4 h: menos cambios).
+- Decisión al cierre de cada hora; la cobertura rige la hora siguiente. Su resultado = −cobertura × retorno del
+  perpetuo (cierre a cierre) + cobertura × funding de los cobros de esa hora (el corto cobra el funding positivo y
+  paga el negativo). La cobertura se lleva como fracción del capital (el reajuste hora a hora no se cobra).
+- Costos: **0,02 % por lado** sobre la cobertura que se abre o cierra (maker del perpetuo, entrando con orden límite
+  al cierre; se supone que se llena). Spot: 0,10 % al comprar la primera vez, igual que comprar y mantener.
+- Supuesto operativo: el BTC spot sirve de garantía del corto (modo multi-activo de Binance). Con 0,5x de cobertura
+  contra 1x de BTC no hay riesgo de liquidación; no se modela.
+- **Rival V:** la misma cobertura con la volatilidad realizada de 24 h (de la ronda 7) en vez de P(movimiento).
+- **Comprar y mantener** BTC spot al 100 %.
+- Período de investigación, mitades y holdout: los de la ronda 7 (A = enero a mayo de 2025, B = 2025-06-01 →
+  2025-10-04; holdout 2025-10-05 → 2026-10-04).
+
+## Pasa (período de investigación) si se cumplen las cinco
+
+1. Sharpe de E mayor que el de comprar y mantener en **cada** mitad.
+2. Sharpe de E mayor que el de V en **cada** mitad.
+3. Caída máxima de E menor que la de comprar y mantener en el total.
+4. Con costo **taker de 0,05 % por lado** (si las órdenes límite no se llenan), Sharpe de E mayor que el de comprar
+   y mantener en el total.
+5. Robustez: en la grilla percentil {70, 80, 90} × permanencia {12, 24, 48} h, al menos 6 de 9 con Sharpe mayor
+   que comprar y mantener en el total (no se usa para elegir).
+
+## Holdout (una sola corrida)
+
+Solo si pasa: 2025-10-05 → 2026-10-04 con las mismas reglas. Pasa si el Sharpe de E es mayor o igual que el de
+comprar y mantener **y** mayor que el de V, con caída máxima menor que la de comprar y mantener. Si pasa, va al panel
+como "cobertura sugerida" y al paper trading, no a plata real. Si no, se descarta sin ajustar.
