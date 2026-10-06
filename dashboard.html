@@ -1725,7 +1725,7 @@ function renderStatus(st) {
         return [group(`Precio y técnicos · ${current.tf}`, t.slice(0, 3)), group("Volatilidad y OI", t.slice(3))]; })(),
       ...(current.market ? [group("Dinero en el mercado · diario", marketTiles(current.market))] : []),
       ...(current.market && cryptoTiles(current.market).length ? [group("Mercado cripto", cryptoTiles(current.market))] : []),
-      group("Flujo y señales", [whalesTile(st.whales), ...[strategyTile(st.strategy)].flat(), ...executorTile(st.executor), ...mlTile(st.ml),
+      group("Flujo y señales", [...coberturaTile(st.cobertura), whalesTile(st.whales), ...[strategyTile(st.strategy)].flat(), ...executorTile(st.executor), ...mlTile(st.ml),
         ...paperTiles(st.paper)]),
     ].join("");
     document.getElementById("updated").textContent =
@@ -2144,6 +2144,31 @@ function mlTile(m) {
   return [tile(`Modelo ML ${m.horizon_h} h`, mlLevel(m), rows, m.p_move_pctile_90d >= 80 ? " alert" : "")];
 }
 
+// Cobertura sugerida (estrategia/cobertura.py, regla de la ronda 8): BTC spot siempre y un corto del 50 % en el
+// perpetuo mientras el modelo espera un movimiento grande. Con su paper trading contra comprar y mantener.
+function coberturaTile(c) {
+  if (!c) return [];
+  const signed = (x, d = 2) => x == null ? "–" : (x >= 0 ? "+" : "−") + nf(d).format(Math.abs(x)) + " %";
+  const pct = (x) => nf(0).format(x * 100) + " %";
+  const at = (iso) => fmtLocal(Date.parse(iso) / 1000);
+  const on = c.hedge > 0;
+  const rows = [["acción", on ? `<b>corto ${pct(c.hedge)} perp</b>` : "100 % spot"], ["desde", at(c.since_utc)]];
+  if (on) rows.push([`<span title="se extiende si el modelo vuelve a esperar un movimiento grande">hasta</span>`, at(c.until_utc)]);
+  rows.push([`<span title="percentil de P(movimiento 4 h) contra los últimos 90 días; cubre si pasa ${c.rules.pctl} en alguna de las últimas ${c.rules.hold_h} h">percentil</span>`,
+    `${c.pctl == null ? "–" : nf(0).format(c.pctl)} <span class="muted">(${c.hours_over_threshold_24h} h ≥ ${c.rules.pctl})</span>`]);
+  const p = c.paper || {};
+  if (p.waiting) rows.push(["paper", `empieza ${at(p.start_utc)}`]);
+  else rows.push(
+    [`<span title="desde ${at(p.start_utc)}; ${p.cambios} cambios, costos ${signed(-p.costos_pct)}, funding cobrado ${signed(p.funding_cobrado_pct)}">paper</span>`, signed(p.return_pct)],
+    [`<span title="comprar y mantener BTC spot desde el mismo inicio">solo BTC</span>`, signed(p.buy_hold_return_pct)],
+    ["caída máx.", `${signed(p.max_dd_pct, 1)} <span class="muted">/ ${signed(p.buy_hold_max_dd_pct, 1)}</span>`]);
+  const ho = c.backtest.holdout_2025_10_a_2026_10;
+  rows.push([`<span title="ronda 8, oct 2025 a oct 2026, una sola corrida: estrategia / comprar y mantener">holdout</span>`,
+    `${signed(ho.retorno_pct, 1)} <span class="muted">/ ${signed(ho.comprar_y_mantener.retorno_pct, 1)}</span>`]);
+  return [tile(`<span title="Regla de la ronda 8: pasó la investigación y el holdout. Anticipa movimiento, no dirección. Paper trading, sin órdenes reales.">Cobertura</span>`,
+    on ? `<span class="neg">Cubrir ${pct(c.hedge)}</span>` : "Sin cubrir", rows, on ? " alert" : "")];
+}
+
 // Ejecutor (estrategia/ejecutor.py): la estrategia 4h operando de verdad en Binance spot (testnet o real)
 function executorTile(e) {
   if (!e) return [];
@@ -2170,7 +2195,7 @@ function paperTiles(p) {
     const pos = a.side ? `${a.side === "long" ? "Largo" : "Corto"} ${exp(a.exposure)}` : "Afuera";
     const value = a.order ? `${pos} → ${a.order.target_exposure === 0 ? "cerrar" : exp(a.order.target_exposure)}` : pos;
     const rows = [["capital", `${usd0(a.equity_usd)} (${signed(a.return_pct)})`], ["máx. caída", signed(a.max_dd_pct)],
-      ["comprar y mantener", signed(p.buy_hold_return_pct)], ["funding pagado", usd0(a.funding_paid_usd)]];
+      [`<span title="comprar y mantener BTC spot desde el mismo inicio">solo BTC</span>`, signed(p.buy_hold_return_pct)], ["funding pagado", usd0(a.funding_paid_usd)]];
     if (a.side && a.stop != null) rows.push(["stop", fmtPrice(a.stop)]);
     else if (!a.side && a.entry_trigger != null) rows.push(["entra si cierra >", fmtPrice(a.entry_trigger)]);
     if (a.order) rows.unshift(["orden", "<b>en la próxima apertura</b>"]);

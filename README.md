@@ -344,6 +344,23 @@ corrida reentrena el LightGBM con todo lo etiquetado (~4 s) y predice la última
 `prediction.json` incluye la evaluación en vivo (log loss vs prior, AUC de movimiento y de dirección). En el
 dashboard es la tarjeta "Modelo: movimiento fuerte en 4 h": en alerta cuando el percentil es ≥ 80.
 
+### Cobertura sugerida (`estrategia/cobertura.py`)
+
+La regla de la ronda 8 (`investigacion/`), la única que pasó investigación y holdout: 100 % en BTC spot y un
+corto del 50 % en el perpetuo mientras en alguna de las últimas 24 h el percentil a 90 días de P(movimiento) fue
+≥ 80. Con `"cobertura"` en la config, cada corrida:
+
+- calcula P(movimiento) **fuera de muestra** como en la prueba: para cada mes, el LightGBM entrenado con todo lo
+  anterior (no el de `live_model.py`, que ya vio las horas contra las que compara el percentil). Los meses cerrados
+  quedan en `data/estrategia/cobertura_preds.csv`; el mes en curso se recalcula (~3 s);
+- re-simula el paper trading desde `cobertura.start` con las funciones de `investigacion/ronda8.py` (spot, corto,
+  costo maker 0,02 % por lado y funding real) contra comprar y mantener: `data/estrategia/cobertura.json` y
+  `cobertura_log.csv` (una fila por hora, solo se agrega).
+
+Corriendo el paper desde el inicio del holdout reproduce exacto el resultado de la ronda 8 (−11,3 %, Sharpe −0,30).
+En el dashboard es la tarjeta "Cobertura sugerida" y `alertas/velas.py` manda un correo cuando se activa o se apaga.
+Solo simula: no hay órdenes reales.
+
 ## Operar en Binance desde la consola (`trade.py`)
 
 Compra y venta spot. **Por defecto va a la testnet** (testnet.binance.vision, plata ficticia); la cuenta

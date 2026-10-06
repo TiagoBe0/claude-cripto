@@ -8,7 +8,8 @@ Escribe en <data_dir>/dashboard/:
                                  alineados a la grilla de velas de cada timeframe
                                  y flujo neto de órdenes grandes (ballenas)
 - status.json                    último snapshot, antigüedad de cada serie,
-                                 estado de la estrategia y del paper trading, liquidaciones de 24 h
+                                 estado de la estrategia y del paper trading, cobertura sugerida
+                                 (estrategia/cobertura.py), liquidaciones de 24 h
                                  y lectura de ballenas (comprando / vendiendo)
 - liquidity.json                 mapa de liquidez (reporte/liquidez.py): liquidaciones
                                  estimadas por tramo, máximos/mínimos sin barrer y muros
@@ -388,6 +389,11 @@ def status_data(data_dir: Path) -> dict:
     paper_path = data_dir / "estrategia" / "paper.json"
     if paper_path.exists():
         paper = json.loads(paper_path.read_text())
+    cobertura = None
+    cob_path = data_dir / "estrategia" / "cobertura.json"
+    if cob_path.exists():
+        cobertura = json.loads(cob_path.read_text())
+        cobertura.get("paper", {}).pop("curve", None)  # la curva por hora no hace falta en el tile
     ml = None
     ml_path = data_dir / "ml" / "prediction.json"
     if ml_path.exists():
@@ -409,7 +415,7 @@ def status_data(data_dir: Path) -> dict:
                "long_usd_24h": round(float(w.usd[w.side == "long"].sum()), 2),
                "short_usd_24h": round(float(w.usd[w.side == "short"].sum()), 2)}
     return {"generated": int(time.time()), "series": series, "snapshot": snap,
-            "strategy": strategy, "paper": paper, "executor": executor, "ml": ml, "liquidations": liq, "whales": whale_status(data_dir),
+            "strategy": strategy, "paper": paper, "executor": executor, "ml": ml, "cobertura": cobertura, "liquidations": liq, "whales": whale_status(data_dir),
             "day": day_stats(data_dir)}
 
 

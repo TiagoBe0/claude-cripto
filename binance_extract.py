@@ -5,6 +5,8 @@
   ratios long/short y foto del libro (futures_data.py)
 - Fear & Greed, DVOL de Deribit, market cap (CoinGecko y CoinMarketCap), stablecoins y flujos a
   exchanges (DefiLlama) (external_data.py)
+- al final: estrategia, paper trading, modelo ML, cobertura sugerida (estrategia/cobertura.py) y los datos
+  del panel, según lo que esté en config.json
 
 Uso:
     python binance_extract.py                 # usa config.json
@@ -182,6 +184,18 @@ def main() -> None:
         except Exception:
             failed += 1
             log.exception("ml: falló la predicción en vivo")
+    if ccfg := cfg.get("cobertura"):
+        try:
+            from estrategia.cobertura import update as update_cobertura  # también importa lightgbm
+
+            cs = update_cobertura(data_dir, ccfg["start"], ccfg.get("capital", 10_000))
+            p = cs["paper"]
+            log.info("cobertura: %s (percentil %s)%s", f"corto {cs['hedge']:.0%} en el perp hasta {cs['until_utc']}"
+                     if cs["hedge"] else "sin cobertura", cs["pctl"],
+                     "" if p.get("waiting") else f", paper {p['return_pct']:+.2f} % contra {p['buy_hold_return_pct']:+.2f} %")
+        except Exception:
+            failed += 1
+            log.exception("cobertura: falló")
     if (ecfg := cfg.get("trading", {}).get("ejecutor", {})).get("enabled"):
         try:
             from estrategia.ejecutor import update as update_executor

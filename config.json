@@ -44,6 +44,10 @@
     },
     "live_horizon": 4
   },
+  "cobertura": {
+    "start": "2026-10-06T00:00:00Z",
+    "capital": 10000
+  },
   "external": {
     "fear_greed": true,
     "deribit_dvol": true,

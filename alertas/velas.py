@@ -1,4 +1,5 @@
-"""Avisos al cierre de vela: patrones de velas (4h y 1d), cruces de medias (1d) y orden de la estrategia C.
+"""Avisos al cierre de vela: patrones de velas (4h y 1d), cruces de medias (1d), orden de la estrategia C y
+cambios de la cobertura sugerida (ronda 8).
 
 Uso (lo llama binance_extract.py al final de cada corrida si "alerts" está en la config):
     python -m alertas.velas
@@ -118,10 +119,47 @@ def check_strategy(est: Estado) -> None:
     est.notify(key, "estrategia", subject, text)
 
 
+def check_cobertura(est: Estado) -> None:
+    """Avisa cuando la cobertura sugerida se activa o se apaga (estrategia/cobertura.py)."""
+    path = DATA / "estrategia" / "cobertura.json"
+    if not path.exists():
+        return
+    c = json.loads(path.read_text())
+    key = f"cobertura:{c['since_utc']}:{c['hedge']}"
+    since = pd.Timestamp(c["since_utc"])
+    pct = lambda x: f"{x * 100:.0f} %"  # noqa: E731
+    if c["hedge"]:
+        subject = f"BTC · Cobertura ON: corto {pct(c['hedge'])} en el perpetuo hasta {pd.Timestamp(c['until_utc']):%d/%m %H:%M} UTC"
+        first = [f"Desde el {since:%d/%m %H:%M} UTC la regla sugiere cubrir el {pct(c['hedge'])} del BTC spot con un corto en el perpetuo",
+                 f"(exposición neta {pct(c['net_exposure'])}). Sigue hasta el {pd.Timestamp(c['until_utc']):%d/%m %H:%M} UTC si el modelo",
+                 "no vuelve a esperar un movimiento grande; si lo espera, se extiende."]
+    else:
+        subject = "BTC · Cobertura OFF: sin corto, 100 % BTC spot"
+        first = [f"Desde el {since:%d/%m %H:%M} UTC la regla sugiere cerrar el corto: 100 % en BTC spot."]
+    p = c.get("paper", {})
+    sg = lambda x: ("+" if x >= 0 else "−") + ar(abs(x)) + " %"  # noqa: E731
+    paper = ("Paper trading todavía sin datos." if p.get("waiting") else
+             f"Paper trading desde el {pd.Timestamp(p['start_utc']):%d/%m/%Y}: {sg(p['return_pct'])} contra {sg(p['buy_hold_return_pct'])} "
+             f"de comprar y mantener · caída máx {sg(p['max_dd_pct'])} contra {sg(p['buy_hold_max_dd_pct'])}.")
+    text = "\n".join([
+        *first,
+        "",
+        f"P(movimiento 4 h) del modelo: {c['p_move'] * 100:.0f} %, percentil {c['pctl']:.0f} de los últimos 90 días "
+        f"(umbral {c['rules']['pctl']}; {c['hours_over_threshold_24h']} de las últimas 24 h por encima).",
+        paper,
+        "",
+        "Regla de la ronda 8: pasó la investigación (2025) y el holdout (oct 2025 a oct 2026). No es una señal de",
+        "dirección: el modelo anticipa movimiento, no hacia dónde. Es paper trading: no se envía ninguna orden real.",
+        "",
+        f"Panel: {PANEL}",
+    ])
+    est.notify(key, "cobertura", subject, text)
+
+
 def run() -> None:
     est = Estado("velas")
     try:
-        for fn in (check_candles, check_strategy):
+        for fn in (check_candles, check_strategy, check_cobertura):
             try:
                 fn(est)
             except Exception:  # noqa: BLE001 - una parte que falla no frena la otra
