@@ -331,3 +331,64 @@ Si el cruce real ocurre antes de los 20 días, el evento sigue contando: lo que 
 
 Solo si alguna pasa: se corre una vez en el holdout con las mismas reglas. Pasa si la diferencia con la base tiene
 el mismo signo favorable con al menos 10 eventos independientes. Si no, se descarta sin ajustar.
+
+---
+
+# Ronda 7 · exposición a BTC spot según P(movimiento) del modelo ML (registrada el 2026-10-05, antes de correrla)
+
+El modelo del panel (`ml/live_model.py`, LightGBM del baseline) predice **si** BTC se va a mover más de 0,5 % en las
+próximas 4 h (AUC ~0,70 en walk-forward) pero no **hacia dónde** (AUC ~0,51). La idea: usarlo para el tamaño y no
+para el lado. Siempre comprado en BTC **spot** (la ronda 3 mostró que el funding del perpetuo se come la exposición
+compradora) y con **menos exposición en las horas en que el modelo espera un movimiento grande**. No busca ganarle a
+BTC en retorno, sino quedarse con su suba con menos riesgo: mejor Sharpe y menor caída.
+
+La pregunta de fondo es si el modelo **agrega algo sobre la volatilidad reciente**. La volatilidad se agrupa (horas
+movidas siguen a horas movidas), y buena parte del AUC 0,70 puede ser solo eso. Por eso el rival que decide no es
+solo comprar y mantener, sino la **misma regla con la volatilidad realizada** de las últimas 24 h en vez del modelo.
+
+Qué se vio antes de registrar (para juzgar el sesgo):
+
+- El AUC 0,70 / 0,51 sale de un walk-forward de **2025-01 a 2026-09**, que incluye el holdout. Para P(movimiento) el
+  holdout no es virgen; la regla de exposición sí (nunca se simuló).
+- La ronda 3 (volatilidad gestionada diaria en el perpetuo): en 2023-2025 mejoraba apenas el Sharpe contra el
+  perpetuo a 1x (1,66 contra 1,59) y perdía contra spot.
+- El historial del modelo arranca en 2024-01 (velas de 1 h desde `start_date`): el período de investigación es corto.
+
+## Datos y reglas
+
+- `data/ml/dataset_1h.csv`, features de `ml.baseline.feature_columns` y el modelo `ml.baseline.models()["lgbm"]`
+  sin cambios, etiqueta `label_4h` (umbral 0,5 % de config.json). P(movimiento) = 1 − P(neutral).
+- **Walk-forward mensual** desde 2024-10: cada mes se entrena con todo lo anterior, descartando las últimas 4 h
+  (su etiqueta mira dentro del mes), y se predice el mes. Así la predicción de cada hora es fuera de muestra.
+- **Percentil** de P(movimiento) de la hora contra las predicciones walk-forward de los 90 días anteriores (2.160 h,
+  la hora incluida), como en el panel pero sin mirar el futuro. Las de 2024-10 a 2024-12 solo sirven para eso.
+- Decisión al cierre de cada vela de 1 h con lo conocido hasta ahí; la exposición rige para la hora siguiente.
+- **Estrategia E:** exposición 100 % en BTC spot; **50 %** si en alguna de las últimas 4 horas (el horizonte del
+  modelo) el percentil fue ≥ **80**. Lo que no está en BTC queda en USDT sin rendimiento.
+- **Rival V:** la misma regla con la volatilidad realizada (desvío de los 24 retornos de 1 h anteriores) en lugar de
+  P(movimiento), con su percentil a 90 días.
+- **Comprar y mantener** BTC spot al 100 %.
+- Costos: **0,10 % por lado** sobre lo operado en cada cambio de exposición (taker spot de Binance).
+- Métricas sobre retornos horarios: retorno, Sharpe anualizado (×√8760), caída máxima, exposición media, costos.
+- Período de investigación **2025-01-01 → 2025-10-04**, mitades **A = enero a mayo de 2025** y
+  **B = 2025-06-01 → 2025-10-04**. Holdout desde **2025-10-05**, sin tocar.
+
+## Pasa (período de investigación) si se cumplen las cuatro
+
+1. Sharpe de E mayor que el de comprar y mantener en **cada** mitad.
+2. Sharpe de E mayor que el de V en **cada** mitad (el modelo agrega algo sobre la volatilidad).
+3. Caída máxima de E menor que la de comprar y mantener en el total.
+4. Robustez: en la grilla percentil {70, 80, 90} × exposición reducida {0, 25, 50 %}, al menos 6 de 9 con Sharpe
+   mayor que comprar y mantener en el total (no se usa para elegir).
+
+## Se informa, sin que decida
+
+- Retorno medio y retorno absoluto medio de las 4 h siguientes por quintil de P(movimiento) y por quintil de la
+  volatilidad realizada: si el quintil alto tiene retorno parecido con más movimiento, reducir ahí mejora el Sharpe.
+- AUC de P(movimiento) y de la volatilidad realizada para predecir el movimiento de 4 h, en el mismo período.
+
+## Holdout (una sola corrida)
+
+Solo si pasa: 2025-10-05 → 2026-10-04 con las mismas reglas. Pasa si el Sharpe de E es mayor o igual que el de
+comprar y mantener **y** mayor que el de V, con caída máxima menor que la de comprar y mantener. Si pasa, va al panel
+como "exposición sugerida" y al paper trading, no a plata real. Si no, se descarta sin ajustar.
