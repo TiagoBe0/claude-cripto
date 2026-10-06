@@ -144,7 +144,7 @@
   .verdict .v.up { color: var(--up); } .verdict .v.down { color: var(--down); }
   .verdict .s { font-size: 12px; color: var(--text-muted); }
 
-  .groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(212px, 1fr)); gap: 6px; align-items: start; }
+  .groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 6px; align-items: start; }
   .group { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; min-width: 0; }
   .help { margin-left: 4px; font-size: 10px; font-weight: 700; color: var(--text-muted); text-decoration: none;
     border: 1px solid var(--border); border-radius: 50%; display: inline-grid; place-items: center; width: 14px; height: 14px;
@@ -219,6 +219,16 @@
   .daily .mint .legend { font-size: 11px; color: var(--text-muted); }
   .daily td.strong { font-weight: 700; }
   .daily .note { margin: 4px 0 0; color: var(--text-muted); font-size: 11px; }
+  .crypto { padding: 6px 10px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .crypto h2 { font-size: 13px; margin: 0; font-weight: 600; }
+  .crypto-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; align-items: start; }
+  #crypto-chart { position: relative; height: 440px; }
+  .crypto table { width: 100%; }
+  .crypto th, .crypto td { padding: 2px 8px; font-size: 12px; white-space: nowrap; }
+  .crypto th { text-align: right; } .crypto th:first-child { text-align: left; }
+  .crypto tr.total td { font-weight: 700; border-bottom: 1px solid var(--border); }
+  .crypto .note { margin: 0; color: var(--text-muted); font-size: 11px; }
+  @media (max-width: 900px) { .crypto-grid { grid-template-columns: minmax(0, 1fr); } #crypto-chart { height: 380px; } }
   .regime { padding: 8px 10px; display: grid; gap: 4px; }
   .regime th, .regime td { padding: 2px 8px; font-size: 12px; }
   .regime h2 { font-size: 13px; margin: 0; font-weight: 600; }
@@ -276,6 +286,25 @@
   <div class="groups" id="tiles" aria-label="Último snapshot"></div>
 
   <section class="card daily" id="daily" aria-label="Día a día: market cap, volumen y stablecoins" hidden></section>
+
+  <section class="card crypto" id="crypto" aria-label="Mercado cripto: market cap total, dominancia, stablecoins y exchanges" hidden>
+    <h2>Mercado cripto<a class="help" href="ayuda.html#cripto" title="Cómo leer esto">?</a>
+      <span class="muted">· todas las criptos (CoinMarketCap), stablecoins y exchanges (DefiLlama), un dato por día UTC cerrado</span></h2>
+    <div class="crypto-grid">
+      <div>
+        <div class="perf-legend" id="crypto-legend"></div>
+        <div id="crypto-chart"></div>
+      </div>
+      <div>
+        <div class="perf-legend" id="cex-title"></div>
+        <div class="scroll-x"><table id="cex-table"></table></div>
+      </div>
+    </div>
+    <p class="note">El market cap es precio × monedas: muestra cuánto cambió la valuación, <b>no cuánta plata entró</b> (una compra chica
+      con poco libro mueve el precio de todas las monedas). La plata que entra o sale de verdad se ve abajo: la emisión de stablecoins
+      (dólares que se depositan en Tether o Circle o se retiran) y las entradas netas a exchanges (activos que llegan a las billeteras
+      de los exchanges o salen de ellas, sin contar cambios de precio). Los flujos a exchanges se guardan desde que corre el recolector.</p>
+  </section>
 
   <section class="card regime" id="regime" aria-label="Lectura de régimen" hidden></section>
 
@@ -722,6 +751,7 @@ function applyTheme() {
   S.stratStop.applyOptions({ color: t.down });
   setStrategyMarkers();
   renderPerformance();
+  if (cryptoChart && current.market) renderCrypto(current.market);
   if (lab.chart) { labChart(); if (lab.data) labHeat(labParams()); }
   // Sobre el precio cada indicador lleva su color (la segunda línea, punteada); en su panel, los de siempre
   const col = (key, fallback) => isOverlay(key) ? css(`--ov-${key}`) : fallback;
@@ -1694,6 +1724,7 @@ function renderStatus(st) {
       ...(() => { const t = techTiles(current.data);
         return [group(`Precio y técnicos · ${current.tf}`, t.slice(0, 3)), group("Volatilidad y OI", t.slice(3))]; })(),
       ...(current.market ? [group("Dinero en el mercado · diario", marketTiles(current.market))] : []),
+      ...(current.market && cryptoTiles(current.market).length ? [group("Mercado cripto", cryptoTiles(current.market))] : []),
       group("Flujo y señales", [whalesTile(st.whales), ...[strategyTile(st.strategy)].flat(), ...executorTile(st.executor), ...mlTile(st.ml),
         ...paperTiles(st.paper)]),
     ].join("");
@@ -1849,6 +1880,8 @@ function renderDaily(m) {
     const v = m.volume_24h_usd[i], avg = m.volume_avg_30d[i];
     rows.push(`<tr><td>${dayLabel(m.t[i])}</td><td class="num">${fmtPrice(m.price_usd[i])}</td><td class="num">${pc(f("price_usd"))}</td>`
       + `<td class="num">${fmtBig(m.market_cap_usd[i])}</td><td class="num">${d("market_cap_usd") == null ? "–" : spanSign(d("market_cap_usd"), fmtBig(d("market_cap_usd"), true))}</td>`
+      + `<td class="num">${fmtBig(m.total_mcap_usd[i])}</td><td class="num">${d("total_mcap_usd") == null ? "–" : spanSign(d("total_mcap_usd"), fmtBig(d("total_mcap_usd"), true))}</td>`
+      + `<td class="num">${m.btc_dominance[i] == null ? "–" : nf(1).format(m.btc_dominance[i]) + " %"}</td>`
       + `<td class="num">${fmtBig(v)}</td><td class="num">${v != null && avg ? spanSign(v - avg, nf(2).format(v / avg) + "×") : "–"}</td>`
       + `<td class="num">${m.usdt_net[i] == null ? "–" : spanSign(m.usdt_net[i], fmtBig(m.usdt_net[i], true))}</td>`
       + `<td class="num">${m.usdc_net[i] == null ? "–" : spanSign(m.usdc_net[i], fmtBig(m.usdc_net[i], true))}</td>`
@@ -1859,17 +1892,148 @@ function renderDaily(m) {
   }
   card.innerHTML = `<h2>Día a día${helpLink("Día a día")} <span class="muted">· días UTC cerrados, el más nuevo arriba</span></h2>` + mintBars(m)
     + `<div class="scroll-x"><table><thead><tr><th>Día</th><th>Cierre</th><th>Δ precio</th><th>Market cap BTC</th><th>Δ market cap</th>`
+    + `<th title="todas las criptos (CoinMarketCap)">Market cap cripto</th><th>Δ cripto</th><th>Dom. BTC</th>`
     + `<th>Volumen 24 h</th><th>vs prom. 30 d</th><th>Emisión USDT</th><th>Emisión USDC</th><th>USDT + USDC</th>`
     + `<th title="emisión neta del día contra los 365 anteriores; ▲▼ = día fuerte">percentil</th></tr></thead><tbody>${rows.join("")}</tbody></table></div>`
     + `<p class="note">Δ market cap ≈ Δ precio × BTC en circulación: muestra cuánto cambió la valuación, no cuánta plata entró `
     + `(poca plata puede mover mucho el precio). Dólares que entran a cripto: mejor mirar la emisión de stablecoins (se crean cuando `
     + `alguien deposita dólares en Tether o Circle y se queman cuando los retira) junto con el volumen. Emisión = cambio de la oferta `
-    + `en unidades; Tether suele emitir en bloques grandes, así que USDT puede quedar plano varios días y después saltar. Fuentes: CoinGecko (precio, market cap, volumen de todos los exchanges) y DefiLlama.</p>`;
+    + `en unidades; Tether suele emitir en bloques grandes, así que USDT puede quedar plano varios días y después saltar. Fuentes: CoinGecko (precio, market cap, volumen de todos los exchanges), CoinMarketCap (mercado cripto total) y DefiLlama.</p>`;
   card.hidden = false;
 }
 
+// ---------- mercado cripto (todas las monedas: CoinMarketCap; exchanges: DefiLlama) ----------
+const fmtPts = (x) => x == null ? "–" : `${x >= 0 ? "+" : "−"}${nf(1).format(Math.abs(x))} pts`;
+
+function cryptoTiles(m) {
+  const out = [], iT = marketLast(m, "total_mcap_usd");
+  if (iT >= 0) {
+    const v = m.crypto_volume_24h_usd[iT], avg = m.crypto_volume_avg_30d[iT];
+    out.push(tile(`<span title="CoinMarketCap: todas las criptos">Market cap cripto</span> <span class="muted">${dayLabel(m.t[iT])}</span>`,
+      fmtBig(m.total_mcap_usd[iT]),
+      [["1 d", fmtChg(marketChg(m, "total_mcap_usd", 1))], ["7 d", fmtChg(marketChg(m, "total_mcap_usd", 7))],
+       ["30 d", fmtChg(marketChg(m, "total_mcap_usd", 30))],
+       ["altcoins (sin BTC)", fmtBig(m.altcoin_mcap_usd[iT])], ["altcoins 30 d", fmtChg(marketChg(m, "altcoin_mcap_usd", 30))],
+       [`<span title="contra su promedio de 30 días">volumen 24 h</span>`, v == null ? "–" : `${fmtBig(v)}${avg ? ` · ${nf(2).format(v / avg)}×` : ""}`]]));
+    const dom = m.btc_dominance[iT], d7 = marketChg(m, "btc_dominance", 7)[0], d30 = marketChg(m, "btc_dominance", 30)[0];
+    const read = d30 == null ? "–" : d30 >= 1 ? "BTC gana terreno" : d30 <= -1 ? "las altcoins ganan terreno" : "estable";
+    out.push(tile(`<span title="Parte del market cap total que es BTC">Dominancia BTC</span>`, dom == null ? "–" : nf(2).format(dom) + " %",
+      [["7 d", fmtPts(d7)], ["30 d", fmtPts(d30)], ["lectura 30 d", read],
+       ["dominancia ETH", m.eth_dominance[iT] == null ? "–" : nf(2).format(m.eth_dominance[iT]) + " %"]]));
+  }
+  const cx = m.cex;
+  if (cx && cx.t.length) {
+    const i = cx.t.length - 1, f24 = cx.inflows_24h_usd[i];
+    const when = new Date(cx.t[i] * 1000).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", hour12: false });
+    out.push(tile(`<span title="DefiLlama: billeteras públicas de ${cx.exchanges[i]} exchanges, sin contar cambios de precio">Exchanges</span> <span class="muted">${when}</span>`,
+      spanSign(f24, fmtBig(f24, true)),
+      [["24 h", f24 == null ? "–" : f24 >= 0 ? "entran activos" : "salen activos"],
+       ["7 d", spanSign(cx.inflows_7d_usd[i], fmtBig(cx.inflows_7d_usd[i], true))],
+       ["30 d", spanSign(cx.inflows_30d_usd[i], fmtBig(cx.inflows_30d_usd[i], true))],
+       ["en custodia", fmtBig(cx.assets_usd[i])]]));
+  }
+  return out;
+}
+
+// Flujo a exchanges por día: la última foto de cada día UTC (su "últimas 24 h" cubre casi todo el día)
+function cexDaily(cx) {
+  const byDay = new Map();
+  if (cx) cx.t.forEach((t, i) => { if (cx.inflows_24h_usd[i] != null) byDay.set(Math.floor(t / 86400) * 86400, cx.inflows_24h_usd[i]); });
+  return [...byDay].map(([time, value]) => ({ time, value }));
+}
+
+let cryptoChart = null, cryptoS = {}, cryptoHist = null;
+async function renderCrypto(m) {
+  const card = document.getElementById("crypto");
+  const lastT = m ? m.t[marketLast(m, "total_mcap_usd")] : null;
+  // La historia desde 2015 se baja una vez, y de nuevo solo si apareció un día nuevo
+  if (lastT && (!cryptoHist || cryptoHist.t.at(-1) < lastT))
+    cryptoHist = await getJSON("crypto_history.json").catch(() => cryptoHist);
+  if (!m || (!cryptoHist && !m.cex)) { card.hidden = true; return; }
+  card.hidden = false;
+  const t = theme();
+  // Market cap en log10 sobre escala normal: el modo logarítmico de la escala se aplicaría a todos los paneles
+  // y las barras negativas de abajo no entran en una escala logarítmica
+  const big = { type: "custom", minMove: 0.0001, formatter: (x) => fmtBig(10 ** x) };
+  const bigS = { type: "custom", minMove: 1, formatter: (x) => fmtBig(x, true) };
+  const first = !cryptoChart;
+  if (first) {
+    cryptoChart = LWC.createChart(document.getElementById("crypto-chart"), {
+      autoSize: true, handleScroll: { vertTouchDrag: false }, localization: { locale: "es-AR" },
+      timeScale: { timeVisible: false, minBarSpacing: 0.05 }, layout: { panes: { enableResize: false } },
+    });
+    cryptoS.total = cryptoChart.addSeries(LWC.LineSeries, { lineWidth: 2, priceFormat: big, priceLineVisible: false });
+    cryptoS.alt = cryptoChart.addSeries(LWC.LineSeries, { lineWidth: 1, priceFormat: big, priceLineVisible: false });
+    cryptoS.dom = cryptoChart.addSeries(LWC.LineSeries, { lineWidth: 1, priceLineVisible: false,
+      priceFormat: { type: "custom", minMove: 0.01, formatter: (x) => nf(1).format(x) + " %" } }, 1);
+    cryptoS.stable = cryptoChart.addSeries(LWC.HistogramSeries, { priceFormat: bigS, priceLineVisible: false }, 2);
+    cryptoS.cex = cryptoChart.addSeries(LWC.HistogramSeries, { priceFormat: bigS, priceLineVisible: false }, 3);
+    cryptoChart.panes().forEach((p, i) => p.setStretchFactor([3, 1, 1, 1][i]));
+    cryptoChart.subscribeCrosshairMove((param) => cryptoLegend(param));
+  }
+  cryptoChart.applyOptions({
+    layout: { background: { type: "solid", color: t.surface }, textColor: t.text, fontSize: 11, panes: { separatorColor: t.border } },
+    grid: { vertLines: { color: t.grid }, horzLines: { color: t.grid } },
+    rightPriceScale: { borderColor: t.border }, timeScale: { borderColor: t.border },
+  });
+  cryptoS.total.applyOptions({ color: t.primary });
+  cryptoS.alt.applyOptions({ color: t.s1 });
+  cryptoS.dom.applyOptions({ color: t.s2 });
+  const key = `${cryptoHist ? cryptoHist.t.at(-1) : ""}|${m.t.at(-1)}|${m.cex ? m.cex.t.at(-1) : ""}|${t.up}`;
+  if (cryptoS.key !== key) {
+    if (cryptoHist) {
+      const log = (ys) => ys.map((y) => y > 0 ? Math.log10(y) : null);
+      cryptoS.total.setData(line(cryptoHist.t, log(cryptoHist.total_mcap_usd)));
+      cryptoS.alt.setData(line(cryptoHist.t, log(cryptoHist.altcoin_mcap_usd)));
+      cryptoS.dom.setData(line(cryptoHist.t, cryptoHist.btc_dominance));
+    }
+    const bars = (pts) => pts.map((p) => ({ ...p, color: alpha(p.value >= 0 ? t.up : t.down, 0.7) }));
+    cryptoS.stable.setData(bars(m.t.map((time, i) => ({ time, value: m.major_net[i] })).filter((p) => p.value != null)));
+    cryptoS.cex.setData(bars(cexDaily(m.cex)));
+    cryptoS.key = key;
+  }
+  if (first) {  // arranca mostrando el último año; con la rueda o la barra de tiempo se ve desde 2015
+    const end = cryptoHist ? cryptoHist.t.at(-1) : m.t.at(-1);
+    cryptoChart.timeScale().setVisibleRange({ from: end - 365 * 86400, to: end });
+  }
+  cryptoLegend();
+  renderCexTable(m.cex);
+}
+
+function cryptoLegend(param) {
+  const at = (series) => {
+    const d = param && param.time != null ? param.seriesData.get(series) : null;
+    if (d) return d.value;
+    const all = series.data();
+    return param && param.time != null ? null : all.length ? all.at(-1).value : null;
+  };
+  const sw = (cls, color) => `<span class="sw${cls}" style="border-color:${color}"></span>`;
+  const t = theme();
+  const day = param && param.time != null ? dayLabel(param.time) : "último día";
+  const v = (x, s = false) => x == null ? "–" : s ? spanSign(x, fmtBig(x, true)) : fmtBig(x);
+  const v10 = (x) => x == null ? "–" : fmtBig(10 ** x);
+  document.getElementById("crypto-legend").innerHTML = `<b>${day}</b> · arriba: ${sw("", t.primary)}market cap total <b>${v10(at(cryptoS.total))}</b>`
+    + ` ${sw("", t.s1)}altcoins <b>${v10(at(cryptoS.alt))}</b> (escala log.) · ${sw("", t.s2)}dominancia BTC <b>${at(cryptoS.dom) == null ? "–" : nf(1).format(at(cryptoS.dom)) + " %"}</b>`
+    + ` · barras: emisión neta USDT + USDC <b>${v(at(cryptoS.stable), true)}</b> y, abajo de todo, flujo neto a exchanges en 24 h <b>${v(at(cryptoS.cex), true)}</b>`;
+}
+
+function renderCexTable(cx) {
+  const title = document.getElementById("cex-title"), table = document.getElementById("cex-table");
+  if (!cx || !cx.detail) { title.textContent = "Flujos a exchanges: sin datos todavía."; table.innerHTML = ""; return; }
+  const i = cx.t.length - 1;
+  const when = new Date(cx.detail.t * 1000).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" });
+  title.innerHTML = `Entradas netas a exchanges (DefiLlama) · foto de ${when} · positivo = entran activos, negativo = salen`;
+  const sg = (x) => x == null ? "–" : spanSign(x, fmtBig(x, true));
+  const row = (name, a, f24, f7, f30, cls = "") => `<tr class="${cls}"><td>${name}</td><td class="num">${fmtBig(a)}</td>`
+    + `<td class="num">${sg(f24)}</td><td class="num">${sg(f7)}</td><td class="num">${sg(f30)}</td></tr>`;
+  table.innerHTML = `<thead><tr><th>Exchange</th><th>En custodia</th><th>24 h</th><th>7 d</th><th>30 d</th></tr></thead><tbody>`
+    + row(`Todos (${cx.exchanges[i]})`, cx.assets_usd[i], cx.inflows_24h_usd[i], cx.inflows_7d_usd[i], cx.inflows_30d_usd[i], "total")
+    + cx.detail.exchanges.map((e) => row(e.name, e.assets_usd, e.inflows_24h_usd, e.inflows_7d_usd, e.inflows_30d_usd)).join("")
+    + `</tbody>`;
+}
+
 // Link "?" a la sección del machete (ayuda.html) según el título de la columna
-const HELP = [["Mercado", "mercado"], ["Derivados", "derivados"], ["Precio y técnicos", "tecnicos"], ["Volatilidad", "volatilidad"],
+const HELP = [["Mercado cripto", "cripto"], ["Mercado", "mercado"], ["Derivados", "derivados"], ["Precio y técnicos", "tecnicos"], ["Volatilidad", "volatilidad"],
   ["Dinero en el mercado", "dinero"], ["Flujo", "flujo"], ["Día a día", "dia"], ["Lectura de régimen", "regimen"]];
 function helpLink(title) {
   const h = HELP.find(([k]) => title.startsWith(k));
@@ -2052,6 +2216,7 @@ async function load(tf, keepView) {
       getJSON("regime.json").catch(() => null)]);
     current.market = await getJSON("market.json").catch(() => null);
     renderDaily(current.market);
+    renderCrypto(current.market);
     renderRegime(reg);
     current.tf = tf;
     current.strategy = strat;

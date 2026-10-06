@@ -75,6 +75,8 @@ Validado contra la librería `ta`: diferencias del orden de 1e-15.
 | `BTC_dvol_1h.csv` | 1 h | OHLC del DVOL (volatilidad implícita anualizada a 30 días, en %) |
 | `BTC_market_1d.csv` | diaria | CoinGecko: `price_usd`, `market_cap_usd` y `volume_24h_usd` de BTC (todos los exchanges). La API gratis da 365 días hacia atrás |
 | `stablecoins_1d.csv` | diaria | DefiLlama: oferta en unidades (≈ US$) de `stablecoins_usd` (todas las atadas al dólar), `usdt` y `usdc` |
+| `crypto_market_1d.csv` | diaria | CoinMarketCap (API interna de su web, sin clave; puede cambiar sin aviso): `total_mcap_usd` y `altcoin_mcap_usd` de todo el mercado cripto, `btc_dominance`, `eth_dominance`, `volume_24h_usd` y `altcoin_volume_24h_usd`. Desde 2015 |
+| `cex_flows_1h.csv` | 1 h | DefiLlama: suma de 80-90 exchanges de `inflows_24h/7d/30d_usd` (entradas netas a sus billeteras públicas, sin cambios de precio; positivo = entran) y `assets_usd` en custodia. Solo da el dato del momento: la historia arranca con el recolector. `cex_flows.json` guarda el detalle por exchange de la última foto |
 
 Notas:
 

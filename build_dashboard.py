@@ -19,7 +19,12 @@ Escribe en <data_dir>/dashboard/:
 - lab_4h.json                    velas spot 4h desde 2017 para el laboratorio de backtest del
                                  panel (se baja solo al abrirlo)
 - market.json                    diario: market cap y volumen 24 h de BTC (CoinGecko) y stablecoins
-                                 (DefiLlama): oferta, emisión neta diaria de USDT y USDC y su percentil
+                                 (DefiLlama): oferta, emisión neta diaria de USDT y USDC y su percentil;
+                                 mercado cripto total (CoinMarketCap): market cap total y de altcoins y
+                                 dominancia; y entradas netas a exchanges (DefiLlama, una foto por hora)
+                                 con el detalle por exchange
+- crypto_history.json            mercado cripto total desde 2015 (market cap total y de altcoins,
+                                 dominancia de BTC) para el gráfico; aparte porque pesa y cambia una vez por día
 - regime.json                    lectura de régimen (estrategia/regimen.py): estado de hoy por
                                  factor y qué pasó 7 y 30 días después en días parecidos
 
@@ -80,7 +85,7 @@ SERIES_PERIOD = [
     ("fear_greed", 86400),
 ]
 # Series de fuera de Binance que también se vigilan en "Estado de las series"
-EXTERNAL_SERIES = ("fear_greed", "BTC_dvol_1h", "BTC_market_1d", "stablecoins_1d")
+EXTERNAL_SERIES = ("fear_greed", "BTC_dvol_1h", "BTC_market_1d", "stablecoins_1d", "crypto_market_1d", "cex_flows_1h")
 
 
 def _read(path: Path, cols: list[str]) -> pd.DataFrame:
@@ -429,6 +434,8 @@ def liquidity_data(data_dir: Path) -> dict:
 
 STABLE_STRONG_PCTL = 95  # emisión neta por encima (o quema por debajo de 100 - esto) = día fuerte
 MARKET_DAYS = 400  # lo que viaja al navegador; la API gratis de CoinGecko da 365 días
+CEX_HOURS = 90 * 24  # fotos por hora de los flujos a exchanges que viajan al navegador
+CEX_TOP = 15  # exchanges del detalle, los que más tienen en custodia
 
 
 def market_data(data_dir: Path) -> dict | None:
@@ -437,15 +444,22 @@ def market_data(data_dir: Path) -> dict | None:
     Cada fila es un día cerrado (timestamp = apertura del día, como las velas de 1d).
     """
     mpath, spath = data_dir / "BTC_market_1d.csv", data_dir / "stablecoins_1d.csv"
-    if not mpath.exists() and not spath.exists():
+    cpath = data_dir / "crypto_market_1d.csv"
+    if not mpath.exists() and not spath.exists() and not cpath.exists():
         return None
     parts = []
     if mpath.exists():
         parts.append(_read(mpath, ["price_usd", "market_cap_usd", "volume_24h_usd"]))
     if spath.exists():
         parts.append(_read(spath, ["stablecoins_usd", "usdt", "usdc"]))
+    crypto = None
+    if cpath.exists():
+        crypto = _crypto_market(cpath, ["total_mcap_usd", "altcoin_mcap_usd", "btc_dominance", "eth_dominance", "volume_24h_usd"])
+        crypto = crypto.rename(columns={"volume_24h_usd": "crypto_volume_24h_usd"})
+        parts.append(crypto[crypto.index >= parts[0].index[0]] if parts else crypto)
     df = pd.concat(parts, axis=1).sort_index()
-    for col in ("price_usd", "market_cap_usd", "volume_24h_usd", "stablecoins_usd", "usdt", "usdc"):
+    for col in ("price_usd", "market_cap_usd", "volume_24h_usd", "stablecoins_usd", "usdt", "usdc",
+                "total_mcap_usd", "altcoin_mcap_usd", "btc_dominance", "eth_dominance", "crypto_volume_24h_usd"):
         if col not in df:
             df[col] = np.nan
     # promedio de 30 días del volumen, para decir si un día movió más o menos que lo normal
@@ -460,13 +474,53 @@ def market_data(data_dir: Path) -> dict | None:
     # tiene colas largas y un desvío estándar exageraría los días comunes.
     df["major_net_pctl"] = df.major_net.rolling(366, min_periods=90).apply(
         lambda w: (w[:-1] < w[-1]).mean() * 100 + (w[:-1] == w[-1]).mean() * 50, raw=True)
+    df.loc[df.major_net.isna(), "major_net_pctl"] = np.nan  # día sin dato de stablecoins (los otros ya llegaron)
+    df["crypto_volume_avg_30d"] = df.crypto_volume_24h_usd.rolling(30, min_periods=20).mean()
     df = df.tail(MARKET_DAYS)
+    out = {"generated": int(time.time()),
+           **_columns(df, {"price_usd": 2, "market_cap_usd": 0, "volume_24h_usd": 0,
+                           "volume_avg_30d": 0, "stablecoins_usd": 0, "usdt_net": 0, "usdc_net": 0,
+                           "stable_net": 0, "major_net": 0, "major_net_7d": 0, "major_net_30d": 0,
+                           "major_net_pctl": 0, "total_mcap_usd": -6, "altcoin_mcap_usd": -6,
+                           "btc_dominance": 2, "eth_dominance": 2, "crypto_volume_24h_usd": -6,
+                           "crypto_volume_avg_30d": -6}),
+           "stable_strong_pctl": STABLE_STRONG_PCTL}
+    out["cex"] = cex_data(data_dir)
+    return out
+
+
+def _crypto_market(path: Path, cols: list[str]) -> pd.DataFrame:
+    df = _read(path, cols)
+    # CoinMarketCap tiene algunos días de 2020 con dominancia 0 %: dato roto, no un desplome
+    df.loc[df.btc_dominance < 1, "btc_dominance"] = np.nan
+    return df
+
+
+def crypto_history(data_dir: Path) -> dict | None:
+    path = data_dir / "crypto_market_1d.csv"
+    if not path.exists() or last_timestamp(path) is None:
+        return None
+    df = _crypto_market(path, ["total_mcap_usd", "altcoin_mcap_usd", "btc_dominance"])
     return {"generated": int(time.time()),
-            **_columns(df, {"price_usd": 2, "market_cap_usd": 0, "volume_24h_usd": 0,
-                            "volume_avg_30d": 0, "stablecoins_usd": 0, "usdt_net": 0, "usdc_net": 0,
-                            "stable_net": 0, "major_net": 0, "major_net_7d": 0, "major_net_30d": 0,
-                            "major_net_pctl": 0}),
-            "stable_strong_pctl": STABLE_STRONG_PCTL}
+            **_columns(df, {"total_mcap_usd": -6, "altcoin_mcap_usd": -6, "btc_dominance": 2})}
+
+
+def cex_data(data_dir: Path) -> dict | None:
+    """Entradas netas a exchanges (DefiLlama): las fotos por hora y el detalle por exchange de la última."""
+    path = data_dir / "cex_flows_1h.csv"
+    if not path.exists() or last_timestamp(path) is None:
+        return None
+    df = _read(path, ["exchanges", "inflows_24h_usd", "inflows_7d_usd", "inflows_30d_usd", "assets_usd",
+                      "clean_assets_usd"]).tail(CEX_HOURS)
+    out = _columns(df, {"exchanges": 0, "inflows_24h_usd": -3, "inflows_7d_usd": -3, "inflows_30d_usd": -3,
+                        "assets_usd": -6, "clean_assets_usd": -6})
+    detail_path = data_dir / "cex_flows.json"
+    if detail_path.exists():
+        detail = json.loads(detail_path.read_text())
+        exs = sorted(detail["exchanges"], key=lambda e: -(e.get("assets_usd") or 0))[:CEX_TOP]
+        out["detail"] = {"t": detail["timestamp"] // 1000, "exchanges": [
+            {k: (round(v, -3) if isinstance(v, float) else v) for k, v in e.items()} for e in exs]}
+    return out
 
 
 def _write(dest: Path, obj: dict) -> None:
@@ -509,6 +563,9 @@ def build(data_dir: Path) -> Path:
     market = market_data(data_dir)
     if market is not None:
         _write(out_dir / "market.json", market)
+    history = crypto_history(data_dir)
+    if history is not None:
+        _write(out_dir / "crypto_history.json", history)
     _write(out_dir / "status.json", status_data(data_dir))
     _write(out_dir / "liquidity.json", liquidity_data(data_dir))
     return out_dir

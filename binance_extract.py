@@ -3,7 +3,8 @@
 - velas spot de Binance + indicadores técnicos (indicators.py)
 - futuros perpetuos de Binance: velas, premium, funding, open interest,
   ratios long/short y foto del libro (futures_data.py)
-- Fear & Greed y DVOL de Deribit (external_data.py)
+- Fear & Greed, DVOL de Deribit, market cap (CoinGecko y CoinMarketCap), stablecoins y flujos a
+  exchanges (DefiLlama) (external_data.py)
 
 Uso:
     python binance_extract.py                 # usa config.json

@@ -80,7 +80,7 @@
     </ul>
     <nav style="margin-top:6px">
       <a href="#franja">Franja de arriba</a><a href="#mercado">Mercado</a><a href="#derivados">Derivados</a>
-      <a href="#tecnicos">Precio y técnicos</a><a href="#volatilidad">Volatilidad y OI</a><a href="#dinero">Dinero en el mercado</a>
+      <a href="#tecnicos">Precio y técnicos</a><a href="#volatilidad">Volatilidad y OI</a><a href="#dinero">Dinero en el mercado</a><a href="#cripto">Mercado cripto</a>
       <a href="#flujo">Flujo y señales</a><a href="#dia">Día a día</a><a href="#regimen">Régimen</a>
       <a href="#grafico">Gráfico</a><a href="#escenarios">Escenarios</a><a href="#investigacion">Qué probamos</a>
     </nav>
@@ -235,6 +235,36 @@
     </table></div>
   </section>
 
+  <section class="card" id="cripto">
+    <h2>Mercado cripto · todas las monedas (CoinMarketCap y DefiLlama)</h2>
+    <p class="lead">El tile «Mercado cripto» y la sección del mismo nombre debajo de «Día a día». El gráfico arranca en el último año;
+    con la rueda o arrastrando el eje de tiempo se ve desde 2015. Arriba, market cap total y de altcoins en escala logarítmica; después la
+    dominancia de BTC; después las barras de emisión de stablecoins y, abajo de todo, las de flujo neto a exchanges. A la derecha, el detalle
+    de los 15 exchanges con más activos en custodia.</p>
+    <div class="scroll-x"><table>
+      <colgroup><col class="c-ind"><col class="c-que"><col class="c-up"><col class="c-mid"><col class="c-down"><col class="c-res"></colgroup>
+      <thead><tr><th>Indicador</th><th>Qué mide</th><th>▲ Alcista</th><th>● Neutral</th><th>▼ Bajista</th><th>Ojo · qué encontramos</th></tr></thead>
+      <tbody>
+        <tr><td>Market cap cripto</td><td>Precio × monedas de todas las criptos (CoinMarketCap), y de las altcoins (todo menos BTC). Cambio a 1, 7 y 30 días.</td>
+          <td class="mid" colspan="3">Es la valuación, <b>no plata que entra</b>: si sube US$ 100 mil millones en un día no entraron US$ 100 mil millones.
+            Una compra chica en un libro fino mueve el precio de todas las monedas. Sirve para ver el tamaño y la dirección del mercado.</td>
+          <td class="res">Contexto, no señal. Sin probar.</td></tr>
+        <tr><td>Dominancia BTC</td><td>Parte del market cap total que es BTC, y su cambio en puntos a 7 y 30 días.</td>
+          <td class="mid" colspan="3"><b>Sube</b> (≥ +1 pt en 30 días, «BTC gana terreno»): el dinero se refugia en BTC o sale primero de las altcoins.
+            <b>Baja</b> (≤ −1 pt, «las altcoins ganan terreno»): rotación hacia altcoins, típica de tramos de euforia.
+            Con el mercado bajando, una dominancia que sube no es alcista: solo dice que las altcoins caen más.</td>
+          <td class="res">Lectura de rotación, no de dirección. Sin probar.</td></tr>
+        <tr><td>Flujo neto a exchanges</td><td>Activos que entran a las billeteras públicas de 80-90 exchanges menos los que salen, en 24 h, 7 d y 30 d (DefiLlama),
+            valuados sin contar cambios de precio. Todos los activos juntos: BTC, ETH, stablecoins y los demás.</td>
+          <td class="up"><b>Salen</b> varios días seguidos: se retiran monedas a billeteras propias para guardarlas.</td>
+          <td class="mid">Movimientos chicos contra lo que tienen en custodia (US$ 300 mil millones): ±US$ 500 M en un día es poco.</td>
+          <td class="down"><b>Entran</b> fuerte: se depositan monedas, a menudo para venderlas.</td>
+          <td class="res">Ojo: si lo que entra son stablecoins, es poder de compra y no venta; el total no lo separa. Los exchanges mueven fondos entre billeteras
+            propias y DefiLlama no siempre las conoce todas. La historia se arma desde que corre el recolector (octubre 2026): todavía no se puede probar.</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
   <section class="card" id="flujo">
     <h2>Flujo y señales</h2>
     <div class="scroll-x"><table>
@@ -260,7 +290,8 @@
 
   <section class="card" id="dia">
     <h2>Día a día y barras de emisión</h2>
-    <p class="lead">Una fila por día UTC cerrado, el más nuevo arriba: cierre, Δ precio, market cap, volumen contra su promedio
+    <p class="lead">Una fila por día UTC cerrado, el más nuevo arriba: cierre, Δ precio, market cap de BTC y de todo el mercado cripto,
+    dominancia de BTC, volumen contra su promedio
     y emisión de USDT, USDC y la suma con su percentil (▲ / ▼ y negrita = día fuerte). Las barras muestran la emisión neta de 90
     días: arriba azul se crearon, abajo rojo se quemaron, color pleno = día fuerte. Para leer: buscar <b>rachas</b> (varios días
     seguidos creando o quemando) y si el volumen acompaña, más que un día aislado.</p>
