@@ -43,47 +43,99 @@ def _clusters(prices: np.ndarray, usd: np.ndarray, price: float, side: str, top:
 
 # --- 1. mapa estimado de liquidaciones -------------------------------------------
 
+def _hourly(d: Path) -> pd.DataFrame:
+    """Velas de 1 h del perpetuo con el open interest al cierre de cada hora (último dato de 5 min)."""
+    oi = _read(d / f"{SYMBOL}_metrics_5m.csv").open_interest.resample("1h").last()
+    k = _read(d / f"{SYMBOL}_perp_1h.csv")[["high", "low", "close"]]
+    return k.join(oi.rename("oi"), how="inner").dropna()
+
+
+def simulate_levels(df: pd.DataFrame, lookback_days: int = 30):
+    """Recorre las horas de `df` (high, low, close, oi) y devuelve, después de cada una,
+    (hora, cierre, precios, BTC, es_largo, tramo de apalancamiento) de los niveles vivos.
+
+    Cada aumento de open interest en una hora abre la misma cantidad de largos y de cortos al precio
+    medio de esa hora. Se reparten según LEVERAGE_MIX y se calcula su precio de liquidación. Un nivel
+    desaparece cuando el precio lo toca (se liquidó) o cuando tiene más de lookback_days, y todos se
+    achican en proporción cuando el open interest baja (posiciones cerradas)."""
+    lev = np.array(list(LEVERAGE_MIX))
+    w = np.array(list(LEVERAGE_MIX.values()))
+    tiers = np.arange(len(lev))
+    px, btc, is_long = np.empty(0), np.empty(0), np.empty(0, bool)
+    tier, born = np.empty(0, int), np.empty(0, "datetime64[ns]")
+    prev_oi = None
+    for t, high, low, close, cur_oi in df[["high", "low", "close", "oi"]].itertuples():
+        now = np.datetime64(t.tz_localize(None) if t.tzinfo else t)
+        if len(px):
+            keep = ~np.where(is_long, px >= low, px <= high)
+            keep &= born > now - np.timedelta64(lookback_days, "D")
+            px, btc, is_long, tier, born = px[keep], btc[keep], is_long[keep], tier[keep], born[keep]
+        if prev_oi is not None:
+            delta = cur_oi - prev_oi
+            if delta < 0 and len(btc):
+                btc = btc * cur_oi / prev_oi
+            elif delta > 0:
+                entry = (high + low) / 2
+                px = np.concatenate([px, entry * (1 - 1 / lev + MAINT_MARGIN), entry * (1 + 1 / lev - MAINT_MARGIN)])
+                btc = np.concatenate([btc, delta * w, delta * w])
+                is_long = np.concatenate([is_long, np.ones(len(lev), bool), np.zeros(len(lev), bool)])
+                tier = np.concatenate([tier, tiers, tiers])
+                born = np.concatenate([born, np.repeat(now, 2 * len(lev))])
+        prev_oi = cur_oi
+        yield t, close, px, btc, is_long, tier
+
+
 def estimated_bins(d: Path, lookback_days: int = 30, bin_pct: float = 0.5,
                    max_dist_pct: float = 15) -> tuple[float, pd.DataFrame]:
-    """Cada aumento de open interest en una hora abre la misma cantidad de largos y de cortos
-    al precio medio de esa hora. Se reparten según LEVERAGE_MIX y se calcula su precio de
-    liquidación. Un nivel desaparece cuando el precio lo toca (se liquidó) y todos se achican
-    en proporción cuando el open interest baja (posiciones cerradas).
+    """El mapa de liquidaciones de ahora (ver simulate_levels).
 
     Devuelve el último precio y los tramos de bin_pct a menos de max_dist_pct del precio:
     columnas `price` (centro del tramo), `usd` y `side` ("long" abajo, "short" arriba)."""
-    oi = _read(d / f"{SYMBOL}_metrics_5m.csv").open_interest.resample("1h").last()
-    k = _read(d / f"{SYMBOL}_perp_1h.csv")[["high", "low", "close"]]
-    df = k.join(oi.rename("oi"), how="inner").dropna()
+    df = _hourly(d)
     df = df[df.index >= df.index[-1] - pd.Timedelta(days=lookback_days)]
-
-    lev = np.array(list(LEVERAGE_MIX))
-    w = np.array(list(LEVERAGE_MIX.values()))
-    lvl_px, lvl_btc, lvl_long = np.empty(0), np.empty(0), np.empty(0, bool)
-    prev_oi = None
-    for high, low, close, cur_oi in df[["high", "low", "close", "oi"]].itertuples(index=False):
-        if len(lvl_px):
-            hit = np.where(lvl_long, lvl_px >= low, lvl_px <= high)
-            lvl_px, lvl_btc, lvl_long = lvl_px[~hit], lvl_btc[~hit], lvl_long[~hit]
-        if prev_oi is not None:
-            delta = cur_oi - prev_oi
-            if delta < 0 and len(lvl_btc):
-                lvl_btc = lvl_btc * cur_oi / prev_oi
-            elif delta > 0:
-                entry = (high + low) / 2
-                lvl_px = np.concatenate([lvl_px, entry * (1 - 1 / lev + MAINT_MARGIN), entry * (1 + 1 / lev - MAINT_MARGIN)])
-                lvl_btc = np.concatenate([lvl_btc, delta * w, delta * w])
-                lvl_long = np.concatenate([lvl_long, np.ones(len(lev), bool), np.zeros(len(lev), bool)])
-        prev_oi = cur_oi
-
-    price = float(df.close.iloc[-1])
+    for _, price, lvl_px, lvl_btc, lvl_long, _ in simulate_levels(df, lookback_days):
+        pass
     width = price * bin_pct / 100
     m = np.abs(lvl_px / price - 1) * 100 <= max_dist_pct
     bins = (pd.DataFrame({"bin": np.floor(lvl_px[m] / width), "long": lvl_long[m], "usd": lvl_btc[m] * lvl_px[m]})
             .groupby(["bin", "long"]).usd.sum().reset_index())
     bins["price"] = (bins.bin + 0.5) * width
     bins["side"] = np.where(bins.long, "long", "short")
-    return price, bins[["price", "usd", "side"]]
+    return float(price), bins[["price", "usd", "side"]]
+
+
+def heatmap(d: Path, days: int = 30, lookback_days: int = 30, bin_pct: float = 0.1, margin_pct: float = 10) -> dict:
+    """Mapa de calor del mapa estimado: USD de liquidaciones por hora y tramo de precio, por apalancamiento.
+
+    Grilla de precios fija (tramos de bin_pct del último precio) entre el mínimo y el máximo de la ventana
+    ± margin_pct. Para que viaje liviano, cada celda va en un byte con escala logarítmica:
+    0 = nada, q >= 1 → USD = 10 ** (lo + (q - 1) * (hi - lo) / 254). Matriz [tramo][hora][fila de precio],
+    filas de abajo hacia arriba, en base64."""
+    import base64
+    df = _hourly(d)
+    df = df[df.index >= df.index[-1] - pd.Timedelta(days=days + lookback_days)]
+    win = df[df.index > df.index[-1] - pd.Timedelta(days=days)]
+    width = float(df.close.iloc[-1]) * bin_pct / 100
+    lo_px = np.floor(win.low.min() * (1 - margin_pct / 100) / width) * width
+    rows = int(np.ceil(win.high.max() * (1 + margin_pct / 100) / width - lo_px / width))
+    n_tiers = len(LEVERAGE_MIX)
+    grid = np.zeros((n_tiers, len(win), rows), np.float32)
+    col = 0
+    for t, _, px, btc, _, tier in simulate_levels(df, lookback_days):
+        if t < win.index[0]:
+            continue
+        r = np.floor((px - lo_px) / width).astype(int)
+        m = (r >= 0) & (r < rows)
+        np.add.at(grid[:, col], (tier[m], r[m]), btc[m] * px[m])
+        col += 1
+    top = float(grid.max()) or 1.0
+    hi, lo = np.log10(top), np.log10(top) - 4  # 4 órdenes de magnitud; lo menor va al primer escalón
+    with np.errstate(divide="ignore"):
+        q = np.where(grid > 0, np.clip(np.round(1 + 254 * (np.log10(grid) - lo) / (hi - lo)), 1, 255), 0)
+    return {"t0": int(win.index[0].timestamp()), "step_s": 3600, "hours": len(win),
+            "price0": round(float(lo_px), 2), "bin": round(width, 2), "rows": rows,
+            "tiers": [f"{k}x" for k in LEVERAGE_MIX], "log10_lo": round(lo, 4), "log10_hi": round(hi, 4),
+            "data": base64.b64encode(q.astype(np.uint8).tobytes()).decode()}
 
 
 def estimated_liquidations(d: Path, lookback_days: int = 30, bin_pct: float = 0.5, max_dist_pct: float = 15) -> dict:

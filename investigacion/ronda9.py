@@ -42,28 +42,9 @@ def liq_pools(h: pd.DataFrame, until) -> pd.DataFrame:
     día, el tramo pool (USD en el 10 % más alto) más cercano de cada lado."""
     oi = _read(f"{SYMBOL}_metrics_5m.csv", ["open_interest"], until).open_interest.resample("1h").last()
     df = h[["high", "low", "close"]].join(oi.rename("oi"), how="inner").dropna()
-    lev = np.array(list(liquidez.LEVERAGE_MIX))
-    w = np.array(list(liquidez.LEVERAGE_MIX.values()))
-    mm = liquidez.MAINT_MARGIN
-    px, btc, is_long, born = np.empty(0), np.empty(0), np.empty(0, bool), np.empty(0, "datetime64[ns]")
-    prev_oi, rows = None, []
     start = df.index[0] + pd.Timedelta(days=LOOKBACK_D)
-    for t, high, low, close, cur_oi in df[["high", "low", "close", "oi"]].itertuples():
-        keep = born > np.datetime64(t - pd.Timedelta(days=LOOKBACK_D))  # solo lo abierto en los últimos 30 días
-        if len(px):
-            keep &= ~np.where(is_long, px >= low, px <= high)
-            px, btc, is_long, born = px[keep], btc[keep], is_long[keep], born[keep]
-        if prev_oi is not None:
-            delta = cur_oi - prev_oi
-            if delta < 0 and len(btc):
-                btc = btc * cur_oi / prev_oi
-            elif delta > 0:
-                entry = (high + low) / 2
-                px = np.concatenate([px, entry * (1 - 1 / lev + mm), entry * (1 + 1 / lev - mm)])
-                btc = np.concatenate([btc, delta * w, delta * w])
-                is_long = np.concatenate([is_long, np.ones(len(lev), bool), np.zeros(len(lev), bool)])
-                born = np.concatenate([born, np.repeat(np.datetime64(t), 2 * len(lev))])
-        prev_oi = cur_oi
+    rows = []
+    for t, close, px, btc, is_long, _ in liquidez.simulate_levels(df, LOOKBACK_D):
         if t.hour != 23 or t < start:  # la vela de las 23 h cierra el día
             continue
         width = close * BIN_PCT / 100

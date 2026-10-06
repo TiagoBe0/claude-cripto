@@ -1,0 +1,632 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mapa de liquidez BTC</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-0: #f4f4f2;
+    --surface-1: #fcfcfb;
+    --border: #e4e3df;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #85847f;
+    --up: #2a78d6;
+    --down: #e34948;
+    --accent: #2a78d6;
+    /* el área del mapa es oscura en los dos temas: la escala de color se lee mejor sobre fondo oscuro */
+    --heat-bg: #0e0c1d;
+    --heat-grid: rgba(255, 255, 255, 0.07);
+    --heat-text: #c9c7d6;
+    --candle-up: #f2f2f2;
+    --candle-down: #ff5c5c;
+    --liq-long: #ff8a3d;
+    --liq-short: #40c4ff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --surface-0: #111110;
+      --surface-1: #1a1a19;
+      --border: #2e2e2c;
+      --text-primary: #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted: #8d8c85;
+      --up: #3987e5;
+      --down: #e66767;
+      --accent: #3987e5;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-0: #111110;
+    --surface-1: #1a1a19;
+    --border: #2e2e2c;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #8d8c85;
+    --up: #3987e5;
+    --down: #e66767;
+    --accent: #3987e5;
+  }
+
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body {
+    margin: 0;
+    background: var(--surface-0);
+    color: var(--text-primary);
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-variant-numeric: tabular-nums;
+  }
+  main { max-width: 1800px; margin: 0 auto; padding: 12px 16px; display: grid; gap: 8px; }
+  header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  h1 { font-size: 18px; margin: 0; font-weight: 600; }
+  a { color: var(--accent); }
+  .muted { color: var(--text-muted); font-size: 12px; }
+  .spacer { flex: 1; }
+  .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; }
+  .stat { padding: 8px 12px; }
+  .stat .k { color: var(--text-muted); font-size: 12px; }
+  .stat .v { font-size: 17px; font-weight: 600; }
+  .stat .s { color: var(--text-secondary); font-size: 12px; }
+
+  .controls { display: flex; gap: 8px 16px; flex-wrap: wrap; align-items: center; padding: 8px 12px; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .seg button {
+    border: 0; background: var(--surface-1); color: var(--text-secondary);
+    padding: 5px 11px; font: inherit; font-size: 13px; cursor: pointer;
+  }
+  .seg button + button { border-left: 1px solid var(--border); }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+  .group { display: inline-flex; gap: 6px; align-items: center; }
+  .group > .lbl { color: var(--text-muted); font-size: 12px; }
+  label.toggle { display: inline-flex; gap: 4px; align-items: center; font-size: 13px; color: var(--text-secondary); cursor: pointer; }
+  input[type=range] { width: 110px; }
+
+  .plot { position: relative; padding: 0; overflow: hidden; background: var(--heat-bg); border-color: var(--border); }
+  #heat { display: block; width: 100%; height: min(78vh, 900px); min-height: 380px; touch-action: none; cursor: crosshair; }
+  #tip {
+    position: absolute; pointer-events: none; z-index: 2;
+    background: rgba(14, 12, 29, 0.94); color: #eeeef5; border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px; padding: 7px 10px; font-size: 12px; line-height: 1.45; min-width: 210px; max-width: 290px;
+  }
+  #tip b { color: #fff; }
+  #tip .row { display: flex; justify-content: space-between; gap: 12px; }
+  .scale { display: flex; align-items: center; gap: 8px; padding: 0 12px 8px; font-size: 12px; color: var(--text-muted); flex-wrap: wrap; }
+  #scale-bar { height: 10px; width: 220px; border-radius: 3px; }
+  .sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: -1px; margin-right: 3px; }
+  .notes { padding: 10px 14px; color: var(--text-secondary); font-size: 13px; }
+  .notes p { margin: 4px 0; }
+  .err { padding: 16px; color: var(--down); }
+
+  @media (max-width: 640px) {
+    main { padding: 8px; }
+    #heat { height: 62vh; }
+    .controls { gap: 8px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Mapa de calor de liquidez · BTCUSDT perpetuo</h1>
+    <span class="muted" id="updated">cargando…</span>
+    <span class="spacer"></span>
+    <a href="./">← Panel</a>
+    <a href="ayuda.html#liquidez">Cómo leerlo</a>
+  </header>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="card controls" role="group" aria-label="Controles del mapa">
+    <div class="group"><span class="lbl">Ventana</span>
+      <div class="seg" id="win">
+        <button data-d="1">1 d</button><button data-d="3">3 d</button><button data-d="7" aria-pressed="true">7 d</button><button data-d="14">14 d</button><button data-d="30">30 d</button>
+      </div></div>
+    <div class="group"><span class="lbl">Apalancamiento</span><div class="seg" id="tiers"></div></div>
+    <div class="group"><span class="lbl">Lado</span>
+      <div class="seg" id="side">
+        <button data-s="both" aria-pressed="true">Ambos</button><button data-s="long">Largos</button><button data-s="short">Cortos</button>
+      </div></div>
+    <div class="group"><span class="lbl">Escala</span>
+      <div class="seg" id="scale">
+        <button data-s="log" aria-pressed="true" title="Se ven también los tramos chicos">Log</button><button data-s="lin" title="Solo resaltan los tramos grandes">Lineal</button>
+      </div></div>
+    <label class="group" title="Más intensidad = los tramos medianos se ven más brillantes"><span class="lbl">Intensidad</span>
+      <input type="range" id="gain" min="0.3" max="3" step="0.05" value="1"></label>
+    <label class="toggle"><input type="checkbox" id="t-candles" checked> Velas</label>
+    <label class="toggle"><input type="checkbox" id="t-real" checked> Liquidaciones reales</label>
+    <label class="toggle"><input type="checkbox" id="t-swing" checked> Máx/mín sin barrer</label>
+    <label class="toggle"><input type="checkbox" id="t-profile" checked> Perfil</label>
+  </div>
+
+  <div class="card plot">
+    <canvas id="heat" aria-label="Mapa de calor: tiempo en el eje horizontal, precio en el vertical, color = US$ estimados a liquidar"></canvas>
+    <div id="tip" hidden></div>
+  </div>
+  <div class="scale">
+    <span>menos</span><canvas id="scale-bar" width="220" height="10"></canvas><span>más US$ a liquidar</span>
+    <span id="scale-max"></span>
+    <span class="spacer"></span>
+    <span><span class="sw" style="background:var(--liq-long)"></span>largos liquidados</span>
+    <span><span class="sw" style="background:var(--liq-short)"></span>cortos liquidados</span>
+    <span>· rueda: zoom en el tiempo · Shift + rueda o rueda sobre el eje de precios: zoom en el precio · arrastrar: mover · doble clic: volver</span>
+  </div>
+
+  <div class="card notes">
+    <p><b>Qué es.</b> Dónde quedarían liquidadas las posiciones apalancadas abiertas en los últimos 30 días, hora por hora.
+      Cada aumento del open interest de Binance abre largos y cortos al precio de esa hora; se reparten según un
+      apalancamiento <b>supuesto</b> (<span id="model"></span>) y se calcula su precio de liquidación. Un nivel se borra
+      cuando el precio lo toca y todos se achican cuando baja el open interest. Nadie publica el apalancamiento real: los
+      mapas comerciales también son estimaciones con supuestos propios.</p>
+    <p><b>Cómo leerlo.</b> Las franjas brillantes son precios donde se concentrarían liquidaciones: abajo del precio,
+      largos; arriba, cortos. Cuando el precio entra en una franja, la franja desaparece (se liquidó). Los puntos son
+      liquidaciones reales capturadas en Binance y Bybit (desde que corre la captura).</p>
+    <p><b>Límite probado.</b> En la ronda 9 de investigación, este mapa no anticipó hacia qué lado va el precio mejor
+      que la sola distancia a cada franja (2020-2025). Sirve para ver dónde hay combustible, no como señal.</p>
+  </div>
+</main>
+
+<script>
+"use strict";
+const DATA = "data/dashboard/";
+const DEFAULT_DAYS = innerWidth < 640 ? 3 : 7;
+const nf = (d) => new Intl.NumberFormat("es-AR", { maximumFractionDigits: d, minimumFractionDigits: d });
+const fmtP = (p) => nf(0).format(p);
+const fmtUsd = (u) => u >= 1e9 ? `US$ ${nf(2).format(u / 1e9)} mil M` : u >= 1e6 ? `US$ ${nf(1).format(u / 1e6)} M`
+  : `US$ ${nf(0).format(u / 1e3)} mil`;
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const pad = (n) => String(n).padStart(2, "0");
+const fmtT = (s) => { const d = new Date(s * 1000); return `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)} ${pad(d.getUTCHours())}:00`; };
+
+// Paleta secuencial (tipo viridis/inferno, perceptualmente pareja) sobre fondo oscuro
+const STOPS = [[14, 12, 29], [45, 22, 92], [88, 33, 140], [33, 102, 172], [24, 160, 160], [92, 200, 99], [235, 220, 60], [255, 250, 210]];
+const LUT = new Uint8ClampedArray(256 * 4);
+for (let i = 0; i < 256; i++) {
+  const x = i / 255 * (STOPS.length - 1), k = Math.min(STOPS.length - 2, Math.floor(x)), f = x - k;
+  for (let c = 0; c < 3; c++) LUT[i * 4 + c] = STOPS[k][c] + (STOPS[k + 1][c] - STOPS[k][c]) * f;
+  LUT[i * 4 + 3] = 255;
+}
+
+const M = { top: 8, right: 74, bottom: 26, left: 8, profile: 120 };
+const st = {
+  hm: null, liq: null, q: null, vals: null, sum: null, tiersOn: [], side: "both", scale: "log", gain: 1,
+  view: null, img: null, imgKey: "", hover: null, show: { candles: true, real: true, swing: true, profile: true },
+};
+try {
+  const saved = JSON.parse(localStorage.getItem("liqmap") || "{}");
+  if (saved.side) st.side = saved.side;
+  if (saved.scale) st.scale = saved.scale;
+  if (saved.gain) st.gain = saved.gain;
+  if (saved.show) Object.assign(st.show, saved.show);
+} catch (e) { /* sin storage */ }
+const save = () => {
+  try { localStorage.setItem("liqmap", JSON.stringify({ side: st.side, scale: st.scale, gain: st.gain, show: st.show })); } catch (e) { /* nada */ }
+};
+
+const canvas = document.getElementById("heat"), ctx = canvas.getContext("2d");
+const off = document.createElement("canvas"), offCtx = off.getContext("2d");
+
+async function load() {
+  const [hm, liq] = await Promise.all([
+    fetch(DATA + "liq_heatmap.json", { cache: "no-store" }).then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); }),
+    fetch(DATA + "liquidity.json", { cache: "no-store" }).then((r) => r.ok ? r.json() : null).catch(() => null),
+  ]);
+  st.hm = hm; st.liq = liq;
+  const bin = atob(hm.data), n = bin.length;
+  st.q = new Uint8Array(n);
+  for (let i = 0; i < n; i++) st.q[i] = bin.charCodeAt(i);
+  // valor de cada escalón: 0 = nada; q >= 1 -> 10 ** (lo + (q - 1) * (hi - lo) / 254)
+  st.vals = new Float64Array(256);
+  for (let k = 1; k < 256; k++) st.vals[k] = 10 ** (hm.log10_lo + (k - 1) * (hm.log10_hi - hm.log10_lo) / 254);
+  if (st.tiersOn.length !== hm.tiers.length) st.tiersOn = hm.tiers.map(() => true);
+  document.getElementById("model").textContent = hm.model;
+  document.getElementById("updated").textContent = `actualizado ${new Date(hm.generated * 1000).toLocaleString("es-AR", { hour12: false })} · ejes en UTC`;
+  const tb = document.getElementById("tiers");
+  tb.innerHTML = hm.tiers.map((t, i) => `<button data-i="${i}" aria-pressed="${st.tiersOn[i]}">${t}</button>`).join("");
+  tb.onclick = (ev) => {
+    const b = ev.target.closest("button"); if (!b) return;
+    const i = +b.dataset.i;
+    st.tiersOn[i] = !st.tiersOn[i];
+    if (!st.tiersOn.some(Boolean)) st.tiersOn[i] = true;  // al menos uno
+    b.setAttribute("aria-pressed", st.tiersOn[i]);
+    recompute(); draw();
+  };
+  recompute();
+  if (st.view) { clampView(); requestDraw(); } else setWindow(DEFAULT_DAYS);  // la recarga automática no cambia el zoom
+  stats();
+}
+
+// suma de los tramos de apalancamiento elegidos: sum[col * rows + row]
+function recompute() {
+  const { hours, rows } = st.hm, plane = hours * rows;
+  st.sum = new Float32Array(plane);
+  st.hm.tiers.forEach((_, t) => {
+    if (!st.tiersOn[t]) return;
+    const base = t * plane;
+    for (let i = 0; i < plane; i++) { const q = st.q[base + i]; if (q) st.sum[i] += st.vals[q]; }
+  });
+  st.imgKey = "";
+}
+const cell = (col, row) => st.sum[col * st.hm.rows + row];
+const tierCell = (t, col, row) => st.vals[st.q[(t * st.hm.hours + col) * st.hm.rows + row]];
+const closeAt = (col) => st.hm.candles.close[col];
+
+function setWindow(days) {
+  const hm = st.hm, c = hm.candles, c1 = hm.hours, c0 = Math.max(0, c1 - days * 24);
+  let lo = Infinity, hi = -Infinity;
+  for (let i = c0; i < c1; i++) { if (c.low[i] != null) lo = Math.min(lo, c.low[i]); if (c.high[i] != null) hi = Math.max(hi, c.high[i]); }
+  const pad = (hi - lo) * 0.6 + hi * 0.01;
+  st.view = { c0, c1: c1 + Math.max(1, (c1 - c0) * 0.02), p0: lo - pad, p1: hi + pad };
+  clampView();
+  document.querySelectorAll("#win button").forEach((b) => b.setAttribute("aria-pressed", +b.dataset.d === days));
+  st.imgKey = ""; draw();
+}
+
+function clampView() {
+  const v = st.view, hm = st.hm, pMin = hm.price0, pMax = hm.price0 + hm.rows * hm.bin;
+  const w = Math.min(Math.max(v.c1 - v.c0, 6), hm.hours + 10);
+  if (v.c0 < 0) { v.c0 = 0; v.c1 = w; }
+  if (v.c1 > hm.hours + 10) { v.c1 = hm.hours + 10; v.c0 = v.c1 - w; }
+  v.c1 = v.c0 + w;
+  const h = Math.min(Math.max(v.p1 - v.p0, hm.bin * 8), pMax - pMin);
+  if (v.p0 < pMin) { v.p0 = pMin; v.p1 = pMin + h; }
+  if (v.p1 > pMax) { v.p1 = pMax; v.p0 = pMax - h; }
+  v.p1 = v.p0 + h;
+}
+
+// ---- geometría ----
+function dims() {
+  const W = canvas.clientWidth, H = canvas.clientHeight;
+  const prof = st.show.profile && W > 520 ? M.profile : 0;
+  return { W, H, x0: M.left, x1: W - M.right - prof, y0: M.top, y1: H - M.bottom, prof };
+}
+const xOf = (d, col) => d.x0 + (col - st.view.c0) / (st.view.c1 - st.view.c0) * (d.x1 - d.x0);
+const colOf = (d, x) => st.view.c0 + (x - d.x0) / (d.x1 - d.x0) * (st.view.c1 - st.view.c0);
+const yOf = (d, p) => d.y0 + (st.view.p1 - p) / (st.view.p1 - st.view.p0) * (d.y1 - d.y0);
+const pOf = (d, y) => st.view.p1 - (y - d.y0) / (d.y1 - d.y0) * (st.view.p1 - st.view.p0);
+
+// imagen del mapa (1 px por hora y tramo), normalizada al máximo de lo visible
+function buildImage() {
+  const hm = st.hm, v = st.view, rows = hm.rows;
+  const cA = Math.max(0, Math.floor(v.c0)), cB = Math.min(hm.hours, Math.ceil(v.c1));
+  const rA = Math.max(0, Math.floor((v.p0 - hm.price0) / hm.bin)), rB = Math.min(rows, Math.ceil((v.p1 - hm.price0) / hm.bin));
+  const key = [cA, cB, rA, rB, st.side, st.scale, st.gain, st.tiersOn.join()].join("|");
+  if (key === st.imgKey) return;
+  st.imgKey = key;
+  const keep = (col, row) => {
+    if (st.side === "both") return true;
+    const p = hm.price0 + (row + 0.5) * hm.bin, c = closeAt(col);
+    return st.side === "long" ? p < c : p > c;
+  };
+  let max = 0;
+  for (let c = cA; c < cB; c++) for (let r = rA; r < rB; r++) { const x = cell(c, r); if (x > max && keep(c, r)) max = x; }
+  st.max = max || 1;
+  off.width = hm.hours; off.height = rows;
+  const img = offCtx.createImageData(hm.hours, rows), px = img.data;
+  const lmax = Math.log10(st.max), span = 1.8;  // la escala log cubre ~2 órdenes de magnitud debajo del máximo: lo menor queda oscuro
+  for (let c = 0; c < hm.hours; c++) {
+    for (let r = 0; r < rows; r++) {
+      const x = cell(c, r);
+      let u = 0;
+      if (x > 0 && keep(c, r)) {
+        u = st.scale === "log" ? (Math.log10(x) - (lmax - span)) / span : x / st.max;
+        u = Math.min(1, Math.max(0, u * st.gain));
+        if (st.scale === "lin") u = Math.sqrt(u);  // que lo mediano no desaparezca del todo
+      }
+      const k = Math.round(u * 255) * 4, o = ((rows - 1 - r) * hm.hours + c) * 4;
+      px[o] = LUT[k]; px[o + 1] = LUT[k + 1]; px[o + 2] = LUT[k + 2]; px[o + 3] = 255;
+    }
+  }
+  offCtx.putImageData(img, 0, 0);
+}
+
+function niceStep(range, target) {
+  const raw = range / target, p = 10 ** Math.floor(Math.log10(raw));
+  return [1, 2, 2.5, 5, 10].map((m) => m * p).find((s) => s >= raw);
+}
+
+function draw() {
+  if (!st.hm) return;
+  const dpr = window.devicePixelRatio || 1;
+  const W = canvas.clientWidth, H = canvas.clientHeight;
+  if (canvas.width !== Math.round(W * dpr) || canvas.height !== Math.round(H * dpr)) {
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const d = dims(), hm = st.hm, v = st.view;
+  ctx.fillStyle = css("--heat-bg"); ctx.fillRect(0, 0, W, H);
+  buildImage();
+
+  // mapa
+  ctx.save();
+  ctx.beginPath(); ctx.rect(d.x0, d.y0, d.x1 - d.x0, d.y1 - d.y0); ctx.clip();
+  ctx.imageSmoothingEnabled = false;
+  const sy = hm.rows - (v.p1 - hm.price0) / hm.bin, sh = (v.p1 - v.p0) / hm.bin;
+  ctx.drawImage(off, v.c0, sy, v.c1 - v.c0, sh, d.x0, d.y0, d.x1 - d.x0, d.y1 - d.y0);
+
+  // grilla y ejes
+  ctx.strokeStyle = css("--heat-grid"); ctx.lineWidth = 1;
+  const pStep = niceStep(v.p1 - v.p0, Math.max(4, (d.y1 - d.y0) / 55));
+  for (let p = Math.ceil(v.p0 / pStep) * pStep; p <= v.p1; p += pStep) {
+    const y = Math.round(yOf(d, p)) + 0.5; ctx.beginPath(); ctx.moveTo(d.x0, y); ctx.lineTo(d.x1, y); ctx.stroke();
+  }
+  const hoursVis = v.c1 - v.c0, tStepH = [1, 2, 3, 6, 12, 24, 48, 96, 168].find((s) => hoursVis / s <= Math.max(3, (d.x1 - d.x0) / 90)) || 168;
+  const tTicks = [];
+  for (let c = Math.ceil(v.c0); c <= v.c1; c++) {
+    const ts = hm.t0 + c * hm.step_s;
+    if ((ts / 3600) % tStepH === 0) { tTicks.push([c, ts]); const x = Math.round(xOf(d, c)) + 0.5; ctx.beginPath(); ctx.moveTo(x, d.y0); ctx.lineTo(x, d.y1); ctx.stroke(); }
+  }
+
+  // velas
+  const c = hm.candles, bw = (d.x1 - d.x0) / hoursVis;
+  if (st.show.candles) {
+    const up = css("--candle-up"), dn = css("--candle-down");
+    for (let i = Math.max(0, Math.floor(v.c0)); i < Math.min(c.t.length, Math.ceil(v.c1)); i++) {
+      if (c.close[i] == null) continue;
+      const x = xOf(d, i + 0.5), col = c.close[i] >= c.open[i] ? up : dn;
+      ctx.strokeStyle = col; ctx.fillStyle = col;
+      ctx.beginPath(); ctx.moveTo(Math.round(x) + 0.5, yOf(d, c.high[i])); ctx.lineTo(Math.round(x) + 0.5, yOf(d, c.low[i])); ctx.stroke();
+      if (bw >= 3) {
+        const yA = yOf(d, Math.max(c.open[i], c.close[i])), yB = yOf(d, Math.min(c.open[i], c.close[i]));
+        ctx.fillRect(Math.round(x - bw * 0.35), yA, Math.max(1, Math.round(bw * 0.7)), Math.max(1, yB - yA));
+      }
+    }
+  }
+
+  // liquidaciones reales
+  if (st.show.real && hm.realized.length) {
+    for (const [col, row, usd, isLong] of hm.realized) {
+      if (col < v.c0 - 1 || col > v.c1) continue;
+      const p = hm.price0 + (row + 0.5) * hm.bin;
+      if (p < v.p0 || p > v.p1) continue;
+      const r = Math.min(9, 1 + Math.sqrt(usd / 1.5e5) * 2);
+      ctx.beginPath(); ctx.arc(xOf(d, col + 0.5), yOf(d, p), r, 0, 2 * Math.PI);
+      ctx.fillStyle = isLong ? css("--liq-long") : css("--liq-short");
+      ctx.globalAlpha = 0.7; ctx.fill(); ctx.globalAlpha = 1;
+      if (r > 5) { ctx.strokeStyle = "rgba(255,255,255,0.8)"; ctx.stroke(); }
+    }
+  }
+
+  // máximos y mínimos sin barrer (los de ahora)
+  const sp = st.liq && st.liq.swing_pools;
+  if (st.show.swing && sp && !sp.error) {
+    ctx.setLineDash([5, 4]); ctx.font = "11px system-ui, sans-serif"; ctx.textBaseline = "bottom"; ctx.textAlign = "left";
+    for (const [side, list] of [["above", sp.above || []], ["below", sp.below || []]]) {
+      for (const g of list) {
+        const y = Math.round(yOf(d, g.price)) + 0.5;
+        if (y < d.y0 || y > d.y1) continue;
+        ctx.strokeStyle = "rgba(255,255,255,0.55)"; ctx.beginPath(); ctx.moveTo(d.x0, y); ctx.lineTo(d.x1, y); ctx.stroke();
+        ctx.fillStyle = "rgba(255,255,255,0.75)";
+        ctx.fillText(`${side === "above" ? "máx" : "mín"} sin barrer ${fmtP(g.price)}${g.touches > 1 ? ` ×${g.touches}` : ""}`, d.x0 + 4, y - 2);
+      }
+    }
+    ctx.setLineDash([]);
+  }
+
+  // precio actual
+  const last = c.close[c.close.length - 1];
+  ctx.restore();
+  const yLast = yOf(d, last);
+
+  // perfil de la hora señalada (o la última)
+  if (d.prof) drawProfile(d);
+
+  // eje de precios
+  ctx.fillStyle = css("--heat-text"); ctx.font = "11px system-ui, sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  for (let p = Math.ceil(v.p0 / pStep) * pStep; p <= v.p1; p += pStep) ctx.fillText(fmtP(p), d.x1 + d.prof + 8, yOf(d, p));
+  if (yLast >= d.y0 && yLast <= d.y1) {
+    ctx.strokeStyle = "rgba(255,255,255,0.8)"; ctx.setLineDash([2, 3]);
+    ctx.beginPath(); ctx.moveTo(d.x0, Math.round(yLast) + 0.5); ctx.lineTo(d.x1 + d.prof, Math.round(yLast) + 0.5); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = "#fff"; ctx.fillRect(d.x1 + d.prof + 2, yLast - 9, M.right - 4, 18);
+    ctx.fillStyle = "#0e0c1d"; ctx.font = "600 11px system-ui, sans-serif"; ctx.fillText(fmtP(last), d.x1 + d.prof + 6, yLast);
+  }
+  // eje de tiempo
+  ctx.fillStyle = css("--heat-text"); ctx.font = "11px system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "top";
+  for (const [col, ts] of tTicks) {
+    const dt = new Date(ts * 1000);
+    const lab = dt.getUTCHours() === 0 ? `${pad(dt.getUTCDate())}/${pad(dt.getUTCMonth() + 1)}` : `${pad(dt.getUTCHours())}:00`;
+    ctx.fillText(lab, xOf(d, col), d.y1 + 6);
+  }
+
+  // cruz
+  if (st.hover) {
+    ctx.strokeStyle = "rgba(255,255,255,0.45)"; ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.moveTo(st.hover.x + 0.5, d.y0); ctx.lineTo(st.hover.x + 0.5, d.y1);
+    ctx.moveTo(d.x0, st.hover.y + 0.5); ctx.lineTo(d.x1 + d.prof, st.hover.y + 0.5); ctx.stroke(); ctx.setLineDash([]);
+  }
+  drawScale();
+}
+
+function drawProfile(d) {
+  const hm = st.hm, v = st.view;
+  const col = st.hover && st.hover.col != null ? st.hover.col : hm.hours - 1;
+  const x0 = d.x1 + 2, w = d.prof - 6, close = closeAt(col);
+  const rA = Math.max(0, Math.floor((v.p0 - hm.price0) / hm.bin)), rB = Math.min(hm.rows, Math.ceil((v.p1 - hm.price0) / hm.bin));
+  let max = 0;
+  for (let r = rA; r < rB; r++) max = Math.max(max, cell(col, r));
+  ctx.fillStyle = "rgba(255,255,255,0.03)"; ctx.fillRect(x0, d.y0, w, d.y1 - d.y0);
+  if (!max) return;
+  const top = [];
+  for (let r = rA; r < rB; r++) {
+    const x = cell(col, r); if (!x) continue;
+    const p = hm.price0 + r * hm.bin, ya = yOf(d, p + hm.bin), yb = yOf(d, p);
+    const len = x / max * w, isLong = p + hm.bin / 2 < close;
+    if (st.side !== "both" && (st.side === "long") !== isLong) continue;
+    ctx.fillStyle = isLong ? css("--liq-long") : css("--liq-short");
+    ctx.globalAlpha = 0.75; ctx.fillRect(x0, ya, len, Math.max(1, yb - ya - (yb - ya > 3 ? 1 : 0))); ctx.globalAlpha = 1;
+    top.push([x, (ya + yb) / 2, len]);
+  }
+  top.sort((a, b) => b[0] - a[0]);
+  ctx.font = "10px system-ui, sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillStyle = "#fff";
+  for (const [x, y, len] of top.slice(0, 4)) ctx.fillText(fmtUsd(x).replace("US$ ", ""), x0 + Math.min(len, w - 44) + 3, y);
+  ctx.fillStyle = css("--heat-text"); ctx.textBaseline = "top"; ctx.textAlign = "left";
+  ctx.fillText(st.hover && st.hover.col != null ? fmtT(hm.t0 + col * hm.step_s) : "ahora", x0 + 4, d.y0 + 4);
+}
+
+function drawScale() {
+  const sc = document.getElementById("scale-bar"), g = sc.getContext("2d"), img = g.createImageData(220, 10);
+  for (let x = 0; x < 220; x++) {
+    const k = Math.round(x / 219 * 255) * 4;
+    for (let y = 0; y < 10; y++) { const o = (y * 220 + x) * 4; img.data.set(LUT.subarray(k, k + 4), o); }
+  }
+  g.putImageData(img, 0, 0);
+  document.getElementById("scale-max").textContent = `· máximo en lo visible ${fmtUsd(st.max || 0)} por tramo de US$ ${nf(0).format(st.hm.bin)}`
+    + (st.scale === "log" ? " (escala log)" : "");
+}
+
+// ---- resumen de ahora ----
+function stats() {
+  const hm = st.hm, col = hm.hours - 1, price = closeAt(col);
+  const within = (pct, long) => {
+    let s = 0;
+    for (let r = 0; r < hm.rows; r++) {
+      const p = hm.price0 + (r + 0.5) * hm.bin, dist = (p / price - 1) * 100;
+      if (long ? dist < 0 && dist >= -pct : dist > 0 && dist <= pct) for (let t = 0; t < hm.tiers.length; t++) s += tierCell(t, col, r);
+    }
+    return s;
+  };
+  // franja más grande de cada lado, sumando tramos de 0,5 % (como el mapa del panel)
+  const biggest = (long) => {
+    const w = Math.max(1, Math.round(price * 0.005 / hm.bin));
+    let best = null;
+    for (let r = 0; r + w <= hm.rows; r++) {
+      const pc = hm.price0 + (r + w / 2) * hm.bin;
+      if (long ? pc >= price : pc <= price) continue;
+      let s = 0; for (let k = r; k < r + w; k++) for (let t = 0; t < hm.tiers.length; t++) s += tierCell(t, col, k);
+      if (!best || s > best.s) best = { s, p: pc };
+    }
+    return best;
+  };
+  const bl = biggest(true), bs = biggest(false);
+  const tile = (k, v, s) => `<div class="card stat"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`;
+  const dist = (p) => `${nf(1).format((p / price - 1) * 100)} %`;
+  document.getElementById("stats").innerHTML =
+    tile("Precio (perpetuo, cierre 1 h)", fmtP(price), fmtT(hm.t0 + col * hm.step_s) + " UTC")
+    + tile("Cortos a liquidar hasta +2 %", fmtUsd(within(2, false)), `hasta +5 %: ${fmtUsd(within(5, false))}`)
+    + tile("Largos a liquidar hasta −2 %", fmtUsd(within(2, true)), `hasta −5 %: ${fmtUsd(within(5, true))}`)
+    + (bs ? tile("Franja mayor arriba (0,5 %)", fmtP(bs.p), `${fmtUsd(bs.s)} · ${dist(bs.p)}`) : "")
+    + (bl ? tile("Franja mayor abajo (0,5 %)", fmtP(bl.p), `${fmtUsd(bl.s)} · ${dist(bl.p)}`) : "");
+}
+
+// ---- tooltip ----
+function tooltip(d) {
+  const tip = document.getElementById("tip"), h = st.hover;
+  if (!h || h.col == null) { tip.hidden = true; return; }
+  const hm = st.hm, col = h.col, row = Math.floor((h.price - hm.price0) / hm.bin);
+  if (row < 0 || row >= hm.rows) { tip.hidden = true; return; }
+  const lo = hm.price0 + row * hm.bin, c = hm.candles, tiers = hm.tiers.map((t, i) => [t, tierCell(i, col, row)]);
+  const total = tiers.reduce((a, [, x], i) => a + (st.tiersOn[i] ? x : 0), 0);
+  const real = hm.realized.filter(([cc, rr]) => cc === col && rr === row).reduce((a, x) => a + x[2], 0);
+  const side = lo + hm.bin / 2 < c.close[col] ? "largos" : "cortos";
+  tip.innerHTML = `<div><b>${fmtT(hm.t0 + col * hm.step_s)} UTC</b> · ${fmtP(lo)} – ${fmtP(lo + hm.bin)}</div>`
+    + `<div class="row"><span>${side} a liquidar (estimado)</span><b>${total ? fmtUsd(total) : "–"}</b></div>`
+    + tiers.filter(([, x]) => x).map(([t, x], i) => `<div class="row" style="opacity:${st.tiersOn[hm.tiers.indexOf(t)] ? 1 : 0.45}"><span>· ${t}</span><span>${fmtUsd(x)}</span></div>`).join("")
+    + (real ? `<div class="row"><span>liquidado de verdad en esa hora</span><b>${fmtUsd(real)}</b></div>` : "")
+    + (c.close[col] != null ? `<div class="muted" style="color:#b9b7c9">vela: A ${fmtP(c.open[col])} · M ${fmtP(c.high[col])} · m ${fmtP(c.low[col])} · C ${fmtP(c.close[col])}</div>` : "");
+  tip.hidden = false;
+  const box = tip.getBoundingClientRect(), W = canvas.clientWidth;
+  let x = h.x + 14, y = h.y + 14;
+  if (x + box.width > W - 8) x = h.x - box.width - 14;
+  if (y + box.height > canvas.clientHeight - 8) y = h.y - box.height - 14;
+  tip.style.left = Math.max(4, x) + "px"; tip.style.top = Math.max(4, y) + "px";
+}
+
+// ---- interacción ----
+let drag = null;
+const pinch = new Map();
+canvas.addEventListener("pointerdown", (ev) => {
+  canvas.setPointerCapture(ev.pointerId);
+  pinch.set(ev.pointerId, ev.offsetX);
+  drag = { x: ev.offsetX, y: ev.offsetY, v: { ...st.view }, onAxis: ev.offsetX > dims().x1 + dims().prof };
+});
+canvas.addEventListener("pointermove", (ev) => {
+  const d = dims();
+  if (drag && pinch.size === 2) {  // pellizco: zoom en el tiempo
+    const prev = [...pinch.values()]; pinch.set(ev.pointerId, ev.offsetX); const now = [...pinch.values()];
+    const f = Math.abs(prev[0] - prev[1]) / Math.max(10, Math.abs(now[0] - now[1]));
+    zoomTime(d, (now[0] + now[1]) / 2, f); return;
+  }
+  if (drag) {
+    const dx = ev.offsetX - drag.x, dy = ev.offsetY - drag.y, v = st.view, o = drag.v;
+    if (drag.onAxis) {  // arrastrar el eje de precios: zoom vertical
+      const f = Math.exp(dy / 200), mid = (o.p0 + o.p1) / 2, h = (o.p1 - o.p0) * f;
+      v.p0 = mid - h / 2; v.p1 = mid + h / 2;
+    } else {
+      const dc = dx / (d.x1 - d.x0) * (o.c1 - o.c0), dp = dy / (d.y1 - d.y0) * (o.p1 - o.p0);
+      v.c0 = o.c0 - dc; v.c1 = o.c1 - dc; v.p0 = o.p0 + dp; v.p1 = o.p1 + dp;
+    }
+    clampView(); unpressWindow();
+  }
+  hoverAt(d, ev.offsetX, ev.offsetY);
+  requestDraw();
+});
+const endDrag = (ev) => { pinch.delete(ev.pointerId); if (!pinch.size) drag = null; };
+canvas.addEventListener("pointerup", endDrag);
+canvas.addEventListener("pointercancel", endDrag);
+canvas.addEventListener("pointerleave", () => { st.hover = null; document.getElementById("tip").hidden = true; requestDraw(); });
+canvas.addEventListener("dblclick", () => setWindow(DEFAULT_DAYS));
+canvas.addEventListener("wheel", (ev) => {
+  ev.preventDefault();
+  const d = dims(), f = Math.exp(ev.deltaY * 0.0015);
+  if (ev.shiftKey || ev.offsetX > d.x1) {
+    const p = pOf(d, ev.offsetY), v = st.view;
+    v.p0 = p - (p - v.p0) * f; v.p1 = p + (v.p1 - p) * f;
+  } else zoomTime(d, ev.offsetX, f);
+  clampView(); unpressWindow(); hoverAt(d, ev.offsetX, ev.offsetY); requestDraw();
+}, { passive: false });
+
+function zoomTime(d, x, f) {
+  const c = colOf(d, Math.min(x, d.x1)), v = st.view;
+  v.c0 = c - (c - v.c0) * f; v.c1 = c + (v.c1 - c) * f;
+  clampView();
+}
+function unpressWindow() { document.querySelectorAll("#win button").forEach((b) => b.setAttribute("aria-pressed", "false")); }
+function hoverAt(d, x, y) {
+  if (x < d.x0 || x > d.x1 + d.prof || y < d.y0 || y > d.y1) { st.hover = null; return; }
+  const col = x <= d.x1 ? Math.floor(colOf(d, x)) : null;
+  st.hover = { x, y, price: pOf(d, y), col: col != null && col >= 0 && col < st.hm.hours ? col : null };
+}
+let pending = false;
+function requestDraw() {
+  if (pending) return; pending = true;
+  requestAnimationFrame(() => { pending = false; draw(); tooltip(dims()); });
+}
+
+document.getElementById("win").onclick = (ev) => { const b = ev.target.closest("button"); if (b) setWindow(+b.dataset.d); };
+const segPick = (id, key, attr) => {
+  const el = document.getElementById(id);
+  el.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", b.dataset[attr] === st[key]));
+  el.onclick = (ev) => {
+    const b = ev.target.closest("button"); if (!b) return;
+    st[key] = b.dataset[attr];
+    el.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", x === b));
+    st.imgKey = ""; save(); requestDraw();
+  };
+};
+segPick("side", "side", "s");
+segPick("scale", "scale", "s");
+const gain = document.getElementById("gain");
+gain.value = st.gain;
+gain.oninput = () => { st.gain = +gain.value; st.imgKey = ""; save(); requestDraw(); };
+for (const k of ["candles", "real", "swing", "profile"]) {
+  const el = document.getElementById("t-" + k);
+  el.checked = st.show[k];
+  el.onchange = () => { st.show[k] = el.checked; save(); requestDraw(); };
+}
+new ResizeObserver(() => requestDraw()).observe(canvas);
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => requestDraw());
+
+load().catch((e) => {
+  document.querySelector(".plot").innerHTML = `<div class="err">No se pudo cargar el mapa (${e.message}). Se arma cada hora con el resto del panel.</div>`;
+});
+// se rearma cada hora a los ~3 minutos: se recarga solo
+setInterval(() => load().catch(() => {}), 15 * 60 * 1000);
+</script>
+</body>
+</html>
