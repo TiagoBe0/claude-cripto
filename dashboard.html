@@ -734,8 +734,8 @@ function applyTheme() {
     grid: { vertLines: { color: t.grid }, horzLines: { color: t.grid } },
     rightPriceScale: { borderColor: t.border }, timeScale: { borderColor: t.border },
   });
-  // Velas: sube = cuerpo hueco, baja = relleno (no depende solo del color)
-  S.candles.applyOptions({ upColor: "rgba(0,0,0,0)", downColor: t.down, borderUpColor: t.up,
+  // Velas: cuerpo relleno, azul si sube y rojo si baja
+  S.candles.applyOptions({ upColor: t.up, downColor: t.down, borderUpColor: t.up,
     borderDownColor: t.down, wickUpColor: t.up, wickDownColor: t.down });
   S.sma50.applyOptions({ color: t.muted });
   S.sma200.applyOptions({ color: t.primary });
