@@ -438,3 +438,71 @@ por construcción y **solo el holdout decide**.
 Solo si pasa: 2025-10-05 → 2026-10-04 con las mismas reglas. Pasa si el Sharpe de E es mayor o igual que el de
 comprar y mantener **y** mayor que el de V, con caída máxima menor que la de comprar y mantener. Si pasa, va al panel
 como "cobertura sugerida" y al paper trading, no a plata real. Si no, se descarta sin ajustar.
+
+---
+
+# Ronda 9 · imán de liquidez: ¿el precio va a buscar el pool de liquidez cercano? (registrada el 2026-10-06, antes de correrla)
+
+La idea: alrededor del precio hay "pools" de liquidez (liquidaciones de apalancados y stops). Si el precio tiende a
+ir a buscarlos, un índice que mida cuánto tira cada lado (tamaño del pool / distancia) diría hacia dónde es más
+probable que vaya.
+
+**La trampa a evitar:** aunque el precio fuera un paseo al azar, el pool más cercano se toca primero más seguido
+(con −1 % y +3 %, el de abajo gana ~75 % de las veces). "Va al más cercano" se cumple solo por geometría. El índice
+vale únicamente si el lado que señala gana **más que lo que da la geometría con la volatilidad de ese momento**.
+
+Qué se vio antes de registrar: el mapa de liquidaciones y los máximos/mínimos sin barrer se ven en el panel desde
+2026-10-04 (solo el presente, nunca contra lo que hizo el precio después). Ninguna ronda anterior usó estas series.
+
+## Pools (dos fuentes, se prueban por separado)
+
+- **L · liquidaciones estimadas:** el modelo de `reporte/liquidez.estimated_bins` sin cambios (open interest de
+  Binance de los últimos 30 días, apalancamiento supuesto 10x 30 %, 25x 30 %, 50x 25 %, 100x 15 %, tramos de
+  0,5 %, hasta ±15 % del precio), reconstruido hora a hora con lo conocido en cada momento. **Pool** = tramo con USD
+  en el 10 % más alto de los tramos no vacíos del mapa de ese momento. Largos abajo del precio, cortos arriba.
+  Tamaño = USD del tramo. Open interest desde 2021-12: los pools existen desde 2022-01.
+- **S · stops en máximos y mínimos sin barrer:** la lógica de `reporte/liquidez.swing_pools` (pivotes de 4 h de ±1 día
+  en 90 días y de 1 d de ±5 días en 1 año, que ninguna vela posterior superó; pivotes a menos de 0,5 % se agrupan)
+  con velas del perpetuo hasta el momento de la decisión. Un pivote solo existe cuando ya cerraron las velas que lo
+  confirman. Tamaño = cantidad de pivotes agrupados. Hasta ±15 % del precio.
+
+## Índice
+
+Al cierre de la vela diaria (00:00 UTC), con lo conocido hasta ahí. Para cada lado, el pool **más cercano**:
+`d_arriba`, `d_abajo` = distancia en %; atracción = tamaño / distancia.
+**Imán = 100 × (atracción arriba − atracción abajo) / (atracción arriba + atracción abajo)**, de −100 (tira hacia
+abajo) a +100 (tira hacia arriba). Días sin pool de algún lado no tienen imán.
+
+## Prueba 1 · primer toque contra la geometría (decide si el índice es válido)
+
+- Para cada día con imán: cuál de los dos pools toca primero el precio en los H días siguientes (velas de 1 h del
+  perpetuo; arriba = máximo ≥ pool, abajo = mínimo ≤ pool; si una misma vela toca los dos, vale ½). Si no toca
+  ninguno en H días, el día no cuenta.
+- **Esperado por geometría:** con las velas de 1 h de los 30 días anteriores (rendimiento medio restado, cada hora con
+  su máximo y mínimo), 1.000 caminos simulados de H días: proporción en que se toca primero el de arriba, entre los
+  caminos que tocan alguno, con la misma regla del ½. Sin información del futuro.
+- **Señal:** imán en percentil ≥ 90 → se espera arriba primero; ≤ 10 → abajo primero (percentil contra los últimos
+  365 días, mínimo 180, como en las reglas comunes).
+- **Exceso** = (resultado − esperado por geometría), con signo a favor del lado señalado; t con eventos separados al
+  menos H días.
+- **Pasa** con las reglas comunes: exceso a favor en las dos mitades, t ≥ 2 en el total y al menos 20 eventos
+  independientes. H = 1, 3 y 7 días. Mitades: A = 2020-2022 (en L, desde que hay percentil: ~2022-07, corta) y
+  B = 2023 a 2025-10-04. 2 fuentes × 2 lados × 3 horizontes = 12 pruebas: ~0,6 pasan por azar.
+
+## Prueba 2 · operable (se informa; decide si sirve para operar)
+
+Las mismas señales como operación de `investigacion/estudio.py`: imán ≥ p90 → largo, ≤ p10 → corto, H = 1, 3 y 7
+días, costos y funding reales, contra la base del mismo lado, con el mismo criterio de "pasa".
+
+## Se informa, sin que decida
+
+- Calibración general: en todos los días con imán, primer toque observado contra el esperado por geometría, en total
+  y por quintil de imán. Y lo mismo con la sola distancia (el pool más cercano, sin tamaño), que es la idea literal.
+- Proporción de días en que no se toca ningún pool en H días.
+
+## Holdout (una sola corrida)
+
+Solo las combinaciones (fuente, lado, H) que pasen la prueba 1: 2025-10-05 → fin de los datos con las mismas reglas.
+Pasan si el exceso sigue a favor con t ≥ 1,5 (el holdout tiene un año). Las que pasen van al panel como "imán de
+liquidez" con el pool objetivo de cada lado. Si ninguna pasa, el panel puede mostrar los pools y sus distancias como
+lectura descriptiva, pero sin presentarlo como señal. No se ajusta y se vuelve a probar.
