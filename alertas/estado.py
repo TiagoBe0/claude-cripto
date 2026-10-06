@@ -57,8 +57,11 @@ class Estado:
         if len(self.data["recent"]) >= MAX_PER_HOUR:
             mailer._record(kind, subject, text, False, "tope de correos por hora")
             return False
-        self.data["recent"].append(int(now))
-        return mailer.send(kind, subject, text)
+        # solo cuenta para el tope lo que salió de verdad: sin SMTP o con un error no gasta cupo
+        sent = mailer.send(kind, subject, text)
+        if sent:
+            self.data["recent"].append(int(now))
+        return sent
 
     def save(self) -> None:
         cutoff = time.time() - KEEP_DAYS * 86400

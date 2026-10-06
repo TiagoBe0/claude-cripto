@@ -144,8 +144,10 @@ def run() -> None:
             est.data["sent"][key] = int(time.time())
             mailer._record(kind, subject, text, False, "tope diario de avisos de ballenas")
             return False
-        est.get("ballenas_day")["sent"] += 1
-        return notify(key, kind, subject, text)
+        sent = notify(key, kind, subject, text)
+        if sent:
+            est.get("ballenas_day")["sent"] += 1
+        return sent
 
     est.notify = capped
     try:

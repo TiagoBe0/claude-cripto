@@ -9,7 +9,7 @@ La config vive fuera del repo, en ~/.config/claude-cripto/alertas.env (KEY=valor
     ALERT_TO=destino@ejemplo.com  # varios separados por coma; por defecto SMTP_USER
 
 Sin SMTP_HOST no se envía nada: el aviso queda solo en data/alertas/alertas.log, que es como conviene
-probar. send() nunca lanza.
+probar. send() nunca lanza. Prueba: python -m alertas.mailer
 """
 
 import json
@@ -76,3 +76,11 @@ def send(kind: str, subject: str, text: str) -> bool:
         log.warning("aviso no enviado (%s): %s", type(e).__name__, subject)
         _record(kind, subject, text, False, f"{type(e).__name__}: {e}")
         return False
+
+
+if __name__ == "__main__":
+    # python -m alertas.mailer → manda un correo de prueba con la config actual
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    ok = send("prueba", "BTC · prueba de avisos", "Si llegó este correo, los avisos de claude-cripto funcionan.")
+    print("enviado" if ok else f"no enviado: ver {LOG_FILE}")
+    raise SystemExit(0 if ok else 1)
