@@ -183,3 +183,23 @@ Lectura:
 
 Si se sigue por acá, es una hipótesis nueva que nace de mirar esto (optimista por construcción, solo el holdout la
 puede confirmar): la misma señal con mucho menos costo por cambio o muchos menos cambios.
+
+## Ronda 8 (2026-10-05) · cobertura con el perpetuo según P(movimiento) del ML · pasa la investigación, va al holdout
+
+`python -m investigacion.ronda8` · reglas registradas antes de correrla (99cfcd7) · código verificado contra un
+cálculo a mano (d132fdb; 11e9ec3 corrige un nombre que no dejaba arrancar) · métricas en `data/research/ronda8.json`.
+
+| 2025-01 → 2025-10-04 | E (modelo) | V (volatilidad 24 h) | Comprar y mantener |
+|---|---|---|---|
+| A ene-may: retorno / Sharpe / caída | +11,4 % / 0,91 / −19,6 % | +2,5 % / 0,35 / −28,2 % | +10,5 % / 0,73 / −30,9 % |
+| B jun-oct: retorno / Sharpe / caída | +15,1 % / 2,07 / −8,4 % | +10,3 % / 1,19 / −10,3 % | +16,8 % / 1,61 / −13,3 % |
+| Total: retorno / Sharpe / caída | +28,4 % / 1,25 / −19,6 % | +13,2 % / 0,64 / −28,2 % | +29,3 % / 0,99 / −30,9 % |
+| Cobertura media / cambios / costos / funding cobrado | 0,29 / 119 / 1,2 % / +1,3 % | 0,14 / 57 / 0,6 % / +0,6 % | – |
+| Total con costo taker 0,05 %: Sharpe / caída | 1,17 / −20,1 % | 0,61 / −28,3 % | 0,99 / −30,9 % |
+
+Criterios: los cinco ✓. Grilla: 8 de 9 con Sharpe mayor que comprar y mantener (de 0,81 a 1,41; solo percentil 90
+con 48 h queda abajo). Casi el mismo retorno que comprar y mantener con un tercio menos de caída; el funding cobrado
+por el corto paga los costos.
+
+**Esto no es una confirmación:** la hipótesis nació de mirar este mismo período en la ronda 7. Se corre el holdout
+una vez, sin cambiar nada.
