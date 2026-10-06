@@ -6,9 +6,15 @@ El tope por hora evita una lluvia de correos en una cascada de ballenas.
 
 Cada chequeo usa su propio archivo (estado_<nombre>.json): ballenas corre cada minuto y velas cada
 hora, y con un archivo compartido uno podía pisar lo que acababa de guardar el otro.
+
+Dos corridas del mismo chequeo (cron más una a mano) se ordenan con un lock desde que leen el estado
+hasta que lo guardan: sin él compartían el .tmp y una fallaba al renombrarlo, o repetían un aviso.
 """
 
+import fcntl
 import json
+import os
+import tempfile
 import time
 
 from alertas import mailer
@@ -21,6 +27,10 @@ KEEP_DAYS = 60
 class Estado:
     def __init__(self, name: str):
         self.path = path = STATE_DIR / f"estado_{name}.json"
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        # se suelta en save() o al terminar el proceso
+        self._lock = open(STATE_DIR / f"estado_{name}.lock", "w")
+        fcntl.flock(self._lock, fcntl.LOCK_EX)
         try:
             self.data = json.loads(path.read_text())
         except (OSError, ValueError):
@@ -53,7 +63,8 @@ class Estado:
     def save(self) -> None:
         cutoff = time.time() - KEEP_DAYS * 86400
         self.data["sent"] = {k: t for k, t in self.data["sent"].items() if t >= cutoff}
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(self.data, indent=1))
-        tmp.replace(self.path)
+        fd, tmp = tempfile.mkstemp(dir=STATE_DIR, prefix=self.path.stem, suffix=".tmp")
+        with os.fdopen(fd, "w") as f:
+            f.write(json.dumps(self.data, indent=1))
+        os.replace(tmp, self.path)
+        self._lock.close()
