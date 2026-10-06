@@ -230,3 +230,41 @@ Cómo leerlo:
   corto supone usar el BTC spot como garantía. No se probó con plata ni con el modelo como corre en vivo.
 
 Siguiente, como estaba registrado: al panel como "cobertura sugerida" y al paper trading, **no a plata real**.
+
+---
+
+## Ronda 9 · imán de liquidez (período de investigación, 3739c7e) · PASA S arriba
+
+`python -m investigacion.ronda9` · `data/research/ronda9.{csv,json}`, índice diario en `ronda9_iman.csv`.
+Corrección a lo registrado: el open interest de `data/research` arranca en 2020-09, no en 2021-12, así que L tiene
+imán desde 2020-10 y su mitad A no es corta.
+
+**Prueba 1 · primer toque contra la geometría** (exceso en puntos de probabilidad a favor del lado señalado):
+
+| Fuente · lado | H 1 d: exceso (t) | H 3 d | H 7 d | A / B (H 3 d) | Pasa |
+|---|---|---|---|---|---|
+| S · arriba (imán ≥ p90) | +5,1 (6,8) | +7,4 (3,1) | +8,0 (2,6) | +12,8 / +4,2 | ✓ los tres |
+| S · abajo (imán ≤ p10) | +3,1 (1,4) | +4,5 (1,5) | +4,1 (1,0) | 0,0 / +8,0 | ✗ |
+| L · arriba | −1,0 (−0,5) | −0,8 (−0,4) | +0,3 (0,1) | +4,2 / −3,0 | ✗ |
+| L · abajo | +3,4 (2,0) | +0,9 (0,3) | +1,8 (0,5) | +2,8 / −1,2 | ✗ |
+
+3 de 12 (se esperan ~0,6 por azar), y las tres son la misma combinación en distintos horizontes: es **un**
+hallazgo, no tres.
+
+Controles de que la base geométrica es justa: con todos los días, "el pool más cercano se toca primero" da lo mismo
+que la geometría (L: 86,1 % contra 85,0 % a 1 día; S: 82,6 % contra 82,2 %), y en L el exceso total es ≈ 0 con los
+mismos caminos de precio. En S el efecto aparece en los dos extremos del imán (quintil bajo: arriba primero 6,7 %
+contra 12,1 % esperado; quintil 4: 95,0 % contra 93,4 % a 1 día).
+
+Cómo leerlo:
+
+- **Los máximos y mínimos sin barrer atraen al precio más que lo que da la geometría; el mapa estimado de
+  liquidaciones no.** El mapa depende de un apalancamiento supuesto y no le agrega nada a la distancia.
+- La distancia sola, que era la idea literal, no sirve: el más cercano gana exactamente lo que dice la geometría.
+  Lo que aporta es el tamaño (pivotes agrupados).
+
+**Prueba 2 · operable:** pasa solo S corto a 1 día (+0,68 % contra la base, t 2,5); S largo no pasa en ningún H.
+Saber qué pool se toca primero no alcanza para ganarle a la base después de costos: los pools suelen estar cerca
+y lo que hace el precio después de tocarlos queda abierto.
+
+Siguiente, como estaba registrado: holdout de S arriba (H 1, 3 y 7), una sola vez.
