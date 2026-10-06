@@ -2195,7 +2195,7 @@ function paperTiles(p) {
     const pos = a.side ? `${a.side === "long" ? "Largo" : "Corto"} ${exp(a.exposure)}` : "Afuera";
     const value = a.order ? `${pos} → ${a.order.target_exposure === 0 ? "cerrar" : exp(a.order.target_exposure)}` : pos;
     const rows = [["capital", `${usd0(a.equity_usd)} (${signed(a.return_pct)})`], ["máx. caída", signed(a.max_dd_pct)],
-      [`<span title="comprar y mantener BTC spot desde el mismo inicio">solo BTC</span>`, signed(p.buy_hold_return_pct)], ["funding pagado", usd0(a.funding_paid_usd)]];
+      ["comprar y mantener", signed(p.buy_hold_return_pct)], ["funding pagado", usd0(a.funding_paid_usd)]];
     if (a.side && a.stop != null) rows.push(["stop", fmtPrice(a.stop)]);
     else if (!a.side && a.entry_trigger != null) rows.push(["entra si cierra >", fmtPrice(a.entry_trigger)]);
     if (a.order) rows.unshift(["orden", "<b>en la próxima apertura</b>"]);
