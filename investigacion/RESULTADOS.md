@@ -184,7 +184,7 @@ Lectura:
 Si se sigue por acá, es una hipótesis nueva que nace de mirar esto (optimista por construcción, solo el holdout la
 puede confirmar): la misma señal con mucho menos costo por cambio o muchos menos cambios.
 
-## Ronda 8 (2026-10-05) · cobertura con el perpetuo según P(movimiento) del ML · pasa la investigación, va al holdout
+## Ronda 8 (2026-10-05) · cobertura con el perpetuo según P(movimiento) del ML · PASA (investigación y holdout)
 
 `python -m investigacion.ronda8` · reglas registradas antes de correrla (99cfcd7) · código verificado contra un
 cálculo a mano (d132fdb; 11e9ec3 corrige un nombre que no dejaba arrancar) · métricas en `data/research/ronda8.json`.
@@ -203,3 +203,30 @@ por el corto paga los costos.
 
 **Esto no es una confirmación:** la hipótesis nació de mirar este mismo período en la ronda 7. Se corre el holdout
 una vez, sin cambiar nada.
+
+### Holdout (2025-10-05 → 2026-10-04, una sola corrida, 350b8cc) · PASA
+
+`python -m investigacion.ronda8 --holdout` · `data/research/ronda8_holdout.json`.
+
+| | E (modelo) | V (volatilidad 24 h) | Comprar y mantener |
+|---|---|---|---|
+| Retorno | −11,3 % | −21,6 % | −29,1 % |
+| Sharpe | −0,30 | −0,55 | −0,57 |
+| Caída máxima | −34,7 % | −43,5 % | −53,7 % |
+| Cobertura media / cambios / costos / funding cobrado | 0,34 / 104 / 1,0 % / +1,2 % | 0,20 / 106 / 1,1 % / +0,6 % | – |
+
+Las tres condiciones ✓: Sharpe mayor que comprar y mantener (−0,30 contra −0,57) y que V (−0,55), y caída
+máxima de −34,7 % contra −53,7 %.
+
+Cómo leerlo:
+
+- **Fue un año bajista** (BTC −29 %). Ahí cualquier cobertura ayuda al retorno, pero el Sharpe no depende del
+  tamaño: una cobertura fija del 34 % tendría casi el mismo Sharpe que comprar y mantener. La mejora de −0,57 a
+  −0,30 viene de **cuándo** cubre, no de cubrir en promedio. Y le gana a V con la misma cantidad de cambios.
+- Con la investigación (2025, alcista): casi el mismo retorno que comprar y mantener con un tercio menos de caída.
+  En el holdout (bajista): pierde 11 % en vez de 29 %. Se comporta como se esperaba en los dos tipos de mercado.
+- **Límites:** un solo año de holdout; el AUC de P(movimiento) en ese año ya se había mirado (no la regla); los
+  costos suponen órdenes límite que se llenan (con taker, en la investigación, el Sharpe bajaba de 1,25 a 1,17); el
+  corto supone usar el BTC spot como garantía. No se probó con plata ni con el modelo como corre en vivo.
+
+Siguiente, como estaba registrado: al panel como "cobertura sugerida" y al paper trading, **no a plata real**.
