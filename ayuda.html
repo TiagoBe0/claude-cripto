@@ -375,6 +375,9 @@
         <tr><td>Ronda 4</td><td>Emisión de stablecoins</td><td class="res">0 de 18. Acompaña al mercado, no lo anticipa.</td></tr>
         <tr><td>Ronda 5</td><td>Liquidez (Amihud) y market makers</td><td class="res">0 de 18 con velas. La parte con el libro por minuto (P5, P6) se evalúa cada mes.</td></tr>
         <tr><td>Modelo ML</td><td>LightGBM, 4 h</td><td class="res">Predice movimiento (AUC 0,70), no dirección (0,51).</td></tr>
+        <tr><td>Ronda 6</td><td>Medias proyectadas</td><td class="res">0 de 18. Momentum disfrazado; sí anticipa los cruces ~15 días.</td></tr>
+        <tr><td>Ronda 7</td><td>Menos exposición a BTC spot cuando el modelo ML espera un movimiento grande</td><td class="res">No pasa por costos (15,7 % en 9 meses).
+          El modelo sí agrega sobre la volatilidad reciente (AUC 0,695 contra 0,632) y sin costos mejoraba el Sharpe.</td></tr>
         <tr><td>Ronda P</td><td>Ballenas, liquidaciones, libro, órdenes gigantes (datos propios)</td><td class="res">Esperando datos: evaluación automática el día 1 de cada mes.</td></tr>
       </tbody>
     </table></div>
