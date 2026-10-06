@@ -180,6 +180,13 @@
     display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted);
   }
   .xzoom input { flex: 1; min-width: 0; accent-color: var(--text-secondary); }
+  .fs-btn { border: 1px solid var(--border); background: var(--surface-1); color: var(--text-secondary);
+    border-radius: 8px; padding: 6px 12px; font: inherit; cursor: pointer; }
+  .fs-btn:hover { color: var(--text-primary); border-color: var(--text-secondary); }
+  /* Pantalla completa, como TradingView: solo la barra de arriba y el gráfico, con los paneles apilados */
+  body.fs main { max-width: none; padding: 6px 8px; gap: 6px; }
+  body.fs main > :not(.toolbar):not(.chart-card) { display: none; }
+  body.fs .chart-card { border-radius: 0; border-left: 0; border-right: 0; }
   .pane-label {
     position: absolute; left: 10px; z-index: 3; pointer-events: none;
     font-size: 12px; color: var(--text-secondary);
@@ -293,6 +300,7 @@
       </select></label>
     <label class="toggle" id="strat-toggle-label" hidden><input type="checkbox" id="strat-toggle" checked> Estrategia 4h</label>
     <span class="spacer"></span>
+    <button type="button" class="fs-btn" id="fs-btn" aria-pressed="false" title="Pantalla completa (Esc para salir)">⛶ Pantalla completa</button>
     <a href="ayuda.html" class="muted" title="Cómo leer cada indicador y qué valores mirar">Ayuda: cómo leer el panel</a>
     <span class="muted" id="updated">cargando…</span>
     <span class="muted">Eje en UTC</span>
@@ -475,9 +483,55 @@ function bucketStart(s, tf) {
 }
 
 function paneHeights() {
+  if (document.body.classList.contains("fs")) return fsPaneHeights();
   const price = MOBILE ? Math.max(340, Math.round(innerHeight * 0.55)) : Math.max(460, Math.min(680, Math.round(innerHeight * 0.62)));
   return activePanes().map((p) => p.key === "price" ? price : MOBILE ? Math.round(p.h * 0.85) : p.h);
 }
+
+// En pantalla completa todo entra en la ventana: el precio se lleva hasta el 60 % (al menos el 35 %) y los
+// demás paneles se reparten el resto según su alto normal, con 45 px como mínimo para que se lean
+function fsPaneHeights() {
+  const panes = activePanes();
+  // Lo que queda debajo de la barra de arriba, menos eje de tiempo, barra de ancho, bordes y margen
+  const top = document.querySelector(".chart-card").getBoundingClientRect().top + scrollY;
+  const avail = Math.max(300, innerHeight - top - 30 - 34 - 2 - 6);
+  if (panes.length === 1) return [avail];
+  const rest = panes.filter((p) => p.key !== "price"), total = rest.reduce((a, p) => a + p.h, 0);
+  const share = Math.max(avail * 0.35, Math.min(avail * 0.6, avail - rest.length * 50));
+  const h = Object.fromEntries(rest.map((p) => [p.key, Math.max(45, Math.floor((avail - share) * p.h / total))]));
+  // El precio se queda con lo que sobra (los mínimos y los separadores de 1 px pueden comerle algo)
+  const price = Math.max(Math.round(avail * 0.35), avail - Object.values(h).reduce((a, x) => a + x, 0) - rest.length);
+  return panes.map((p) => p.key === "price" ? price : h[p.key]);
+}
+function setFullscreen(on) {
+  if (on === document.body.classList.contains("fs")) return;
+  document.body.classList.toggle("fs", on);
+  const btn = document.getElementById("fs-btn");
+  btn.setAttribute("aria-pressed", String(on));
+  btn.textContent = on ? "✕ Salir de pantalla completa" : "⛶ Pantalla completa";
+  // La API de pantalla completa no está en todos lados (iPhone): sin ella queda igual el modo dentro de la página
+  try {
+    if (on && !document.fullscreenElement) document.documentElement.requestFullscreen?.()?.catch(() => {});
+    if (!on && document.fullscreenElement) document.exitFullscreen?.()?.catch(() => {});
+  } catch (e) { /* nada */ }
+  rebuildChart();
+  scrollTo(0, 0);
+}
+document.getElementById("fs-btn").addEventListener("click", () => setFullscreen(!document.body.classList.contains("fs")));
+// Esc (o el botón del navegador) sale de la pantalla completa del navegador: se sale también del modo
+document.addEventListener("fullscreenchange", () => {
+  if (document.fullscreenElement) requestAnimationFrame(() => rebuildChart());
+  else setFullscreen(false);
+});
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && document.body.classList.contains("fs") && !document.fullscreenElement) setFullscreen(false);
+});
+let fsResize = 0;
+addEventListener("resize", () => {
+  if (!document.body.classList.contains("fs")) return;
+  clearTimeout(fsResize);
+  fsResize = setTimeout(rebuildChart, 150);
+});
 
 function renderPaneChips() {
   const chips = (attr, on) => PANES.filter((p) => p.key !== "price").map((p) => `<button data-${attr}="${p.key}"`
