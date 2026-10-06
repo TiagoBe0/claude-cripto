@@ -268,3 +268,17 @@ Saber qué pool se toca primero no alcanza para ganarle a la base después de co
 y lo que hace el precio después de tocarlos queda abierto.
 
 Siguiente, como estaba registrado: holdout de S arriba (H 1, 3 y 7), una sola vez.
+
+### Holdout (2025-10-05 → 2026-10-04, una sola corrida, e1f5ca7) · NO PASA
+
+`python -m investigacion.ronda9 --holdout` · `data/research/ronda9_holdout.json`.
+
+| S · arriba | H 1 d | H 3 d | H 7 d |
+|---|---|---|---|
+| Eventos (independientes) | 12 (12) | 23 (16) | 22 (13) |
+| Exceso (t) | −5,8 (−0,7) | −7,9 (−0,8) | −5,5 (−0,6) |
+
+Pedía exceso a favor con t ≥ 1,5: salió en contra en los tres horizontes. Pocos eventos (año bajista, BTC −29 %,
+con pocos días de imán alto hacia arriba), pero la regla era esa: **se descarta sin ajustar**. El imán no va al
+panel como señal. Los pools y sus distancias ya se ven en el panel como lectura descriptiva (mapa de liquidaciones
+y máximos/mínimos sin barrer), sin cambios.
