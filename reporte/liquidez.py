@@ -45,9 +45,15 @@ def _clusters(prices: np.ndarray, usd: np.ndarray, price: float, side: str, top:
 
 def _hourly(d: Path) -> pd.DataFrame:
     """Velas de 1 h del perpetuo con el open interest al cierre de cada hora (último dato de 5 min)."""
-    oi = _read(d / f"{SYMBOL}_metrics_5m.csv").open_interest.resample("1h").last()
+    oi = _oi_hourly(_read(d / f"{SYMBOL}_metrics_5m.csv").open_interest)
     k = _read(d / f"{SYMBOL}_perp_1h.csv")[["high", "low", "close"]]
     return k.join(oi.rename("oi"), how="inner").dropna()
+
+
+def _oi_hourly(oi: pd.Series) -> pd.Series:
+    """Último open interest válido de cada hora. Binance a veces publica 0 (julio de 2024 tiene decenas de horas
+    así): tomado al pie de la letra, el mapa se vacía entero y a la hora siguiente se abre todo el OI en un solo precio."""
+    return oi.where(oi > 0).resample("1h").last()
 
 
 def simulate_levels(df: pd.DataFrame, lookback_days: int = 30):
@@ -136,6 +142,60 @@ def heatmap(d: Path, days: int = 30, lookback_days: int = 30, bin_pct: float = 0
             "price0": round(float(lo_px), 2), "bin": round(width, 2), "rows": rows,
             "tiers": [f"{k}x" for k in LEVERAGE_MIX], "log10_lo": round(lo, 4), "log10_hi": round(hi, 4),
             "data": base64.b64encode(q.astype(np.uint8).tobytes()).decode()}
+
+
+def history_frame(d: Path) -> pd.DataFrame:
+    """Velas de 1 h del perpetuo (open, high, low, close) con el open interest, desde lo más viejo que haya:
+    la copia de data/research (el OI de Binance arranca en septiembre de 2020) seguida de data/; donde se pisan
+    manda data/, que es la que se actualiza."""
+    parts = []
+    for base in (d / "research", d):
+        kp, mp = base / f"{SYMBOL}_perp_1h.csv", base / f"{SYMBOL}_metrics_5m.csv"
+        if not (kp.exists() and mp.exists()):
+            continue
+        k = pd.read_csv(kp, usecols=["timestamp", "open", "high", "low", "close"])
+        k.index = pd.to_datetime(k.pop("timestamp"), unit="ms", utc=True)
+        m = pd.read_csv(mp, usecols=["timestamp", "open_interest"])
+        oi = _oi_hourly(m.set_index(pd.to_datetime(m.timestamp, unit="ms", utc=True)).open_interest)
+        parts.append(k.join(oi.rename("oi"), how="inner").dropna())
+    df = pd.concat(parts)
+    return df[~df.index.duplicated(keep="last")].sort_index()
+
+
+def heatmap_history(d: Path, lookback_days: int = 30, bin_pct: float = 0.5, margin_pct: float = 10) -> dict:
+    """El mismo mapa estimado que heatmap(), pero de toda la historia y por día: cada columna es el promedio de
+    las 24 fotos horarias del día (la última, de las horas que van). Como el precio va de ~10 mil a más de 100 mil,
+    los tramos son logarítmicos: la fila r va de price0 · ratio^r a price0 · ratio^(r+1), con ratio = 1 + bin_pct.
+    El primer mes no se muestra: es lo que tarda en llenarse el mapa (los niveles viven lookback_days).
+    Matriz [tramo][día][fila] en un byte por celda, con la misma escala que heatmap()."""
+    import base64
+    df = history_frame(d)
+    t0 = df.index[0].floor("D") + pd.Timedelta(days=lookback_days)
+    win = df[df.index >= t0]
+    ratio = 1 + bin_pct / 100
+    price0 = round(float(win.low.min()) * (1 - margin_pct / 100), 2)
+    rows = int(np.ceil(np.log(float(win.high.max()) * (1 + margin_pct / 100) / price0) / np.log(ratio)))
+    cols = (win.index[-1].floor("D") - t0).days + 1
+    grid = np.zeros((len(LEVERAGE_MIX), cols, rows), np.float64)
+    hours = np.zeros(cols)
+    for t, _, px, btc, _, tier in simulate_levels(df, lookback_days):
+        if t < t0:
+            continue
+        c = (t - t0).days
+        r = np.floor(np.log(px / price0) / np.log(ratio)).astype(int)
+        m = (r >= 0) & (r < rows)
+        np.add.at(grid[:, c], (tier[m], r[m]), btc[m] * px[m])
+        hours[c] += 1
+    grid /= np.maximum(hours, 1)[None, :, None]
+    top = float(grid.max()) or 1.0
+    hi, lo = np.log10(top), np.log10(top) - 4
+    with np.errstate(divide="ignore"):
+        q = np.where(grid > 0, np.clip(np.round(1 + 254 * (np.log10(grid) - lo) / (hi - lo)), 1, 255), 0)
+    days = win.resample("1D").agg({"open": "first", "high": "max", "low": "min", "close": "last"})
+    days = days.reindex(pd.date_range(t0, periods=cols, freq="1D"))
+    return {"t0": int(t0.timestamp()), "step_s": 86400, "cols": cols, "price0": price0, "ratio": ratio,
+            "rows": rows, "tiers": [f"{k}x" for k in LEVERAGE_MIX], "log10_lo": round(lo, 4), "log10_hi": round(hi, 4),
+            "data": base64.b64encode(q.astype(np.uint8).tobytes()).decode(), "days": days}
 
 
 def estimated_liquidations(d: Path, lookback_days: int = 30, bin_pct: float = 0.5, max_dist_pct: float = 15) -> dict:

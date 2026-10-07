@@ -374,6 +374,9 @@
       <li><b>Puntos</b>: liquidaciones reales (Binance y Bybit) desde que corre la captura; naranja = largos liquidados, celeste = cortos.
         Sirven para ver si las franjas estimadas coinciden con liquidaciones de verdad.</li>
       <li><b>Perfil</b> (a la derecha): el mapa de la hora señalada con el cursor, o el de ahora.</li>
+      <li><b>Liquidaciones · historia</b> (la segunda pestaña): el mismo cálculo desde que hay open interest de Binance (octubre de 2020),
+        con una columna por día (el promedio de las 24 horas) y el precio en escala logarítmica, en tramos de 0,5 %. Ventanas de 3 meses
+        a todo. Como el color se normaliza a lo que se ve, en «todo» los años de precio bajo quedan más tenues: con zoom se ven bien.</li>
       <li><b>Libro de órdenes · 24 h</b> (la otra pestaña): las órdenes límite publicadas en Binance cada minuto, en tramos de US$ 10.
         No es estimado. Spot llega a ~±1 % y el perpetuo a ~±0,15 % (lo máximo que da Binance). Una franja que dura es un muro;
         si se apaga justo antes de que llegue el precio, se retiró. Los puntos son órdenes a mercado de ballenas (≥ US$ 100 mil).

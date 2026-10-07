@@ -116,7 +116,7 @@
   <header>
     <h1>Mapa de calor de liquidez · BTC</h1>
     <div class="seg" id="mode" role="tablist" aria-label="Qué mapa">
-      <button data-m="liq" role="tab">Liquidaciones estimadas · 30 d</button><button data-m="book" role="tab">Libro de órdenes · 24 h</button>
+      <button data-m="liq" role="tab">Liquidaciones estimadas · 30 d</button><button data-m="hist" role="tab" title="El mismo mapa desde 2020, un promedio por día">Liquidaciones · historia</button><button data-m="book" role="tab">Libro de órdenes · 24 h</button>
     </div>
     <span class="muted" id="updated">cargando…</span>
     <span class="spacer"></span>
@@ -172,6 +172,11 @@
     <p><b>Límite probado.</b> En la ronda 9 de investigación, este mapa no anticipó hacia qué lado va el precio mejor
       que la sola distancia a cada franja (2020-2025). Sirve para ver dónde hay combustible, no como señal.</p>
   </div>
+  <div class="card notes" id="notes-hist" hidden>
+    <p><b>Historia.</b> El mismo cálculo corrido desde que hay open interest de Binance (2020), con una columna por día: el
+      color es el <b>promedio</b> de las 24 fotos horarias de ese día (una franja que se barrió a media tarde aparece a medias).
+      El precio va en escala logarítmica, con tramos de 0,5 %. Las liquidaciones reales solo existen desde que corre la captura.</p>
+  </div>
   <div class="card notes" id="notes-book" hidden>
     <p><b>Qué es.</b> Las órdenes límite que había en el libro de Binance cada minuto, en tramos de US$ 10: abajo del precio,
       compras (bids); arriba, ventas (asks). No es una estimación: es lo que estaba publicado. Spot llega a ~±1 % del precio
@@ -203,14 +208,21 @@ const MODES = {
     defaultCols: MOBILE ? 72 : 168, layersLbl: "Apalancamiento", below: "Largos", above: "Cortos",
     priceLbl: "Velas", bubblesLbl: "Liquidaciones reales", b0: "largos liquidados", b1: "cortos liquidados",
     scaleLbl: "más US$ a liquidar", what: (side) => `${side === "below" ? "largos" : "cortos"} a liquidar (estimado)`,
-    bubbleWhat: "liquidado de verdad en esa hora",
+    bubbleWhat: "liquidado de verdad en esa hora", kind: "liq", hash: "#liquidaciones",
+  },
+  hist: {
+    file: "liq_heatmap_hist.json", windows: [[90, "3 m"], [182, "6 m"], [365, "1 a"], [730, "2 a"], [1461, "4 a"], [1e5, "todo"]],
+    defaultCols: MOBILE ? 182 : 365, layersLbl: "Apalancamiento", below: "Largos", above: "Cortos",
+    priceLbl: "Velas", bubblesLbl: "Liquidaciones reales", b0: "largos liquidados", b1: "cortos liquidados",
+    scaleLbl: "más US$ a liquidar", what: (side) => `${side === "below" ? "largos" : "cortos"} a liquidar (estimado, promedio del día)`,
+    bubbleWhat: "liquidado de verdad ese día", kind: "liq", hash: "#historia",
   },
   book: {
     file: "book_heatmap.json", windows: [[1, "1 h"], [3, "3 h"], [6, "6 h"], [12, "12 h"], [24, "24 h"]].map(([h, l]) => [h * 60, l]),
     defaultCols: MOBILE ? 120 : 360, layersLbl: "Mercado", below: "Compras", above: "Ventas",
     priceLbl: "Precio medio", bubblesLbl: "Órdenes de ballenas", b0: "ballena vende a mercado", b1: "ballena compra a mercado",
     scaleLbl: "más US$ en órdenes límite", what: (side) => side === "below" ? "compras límite (bids)" : "ventas límite (asks)",
-    bubbleWhat: "órdenes de ballenas en ese minuto",
+    bubbleWhat: "órdenes de ballenas en ese minuto", kind: "book", hash: "#libro",
   },
 };
 
@@ -235,6 +247,7 @@ try {
 } catch (e) { /* sin storage */ }
 if (location.hash === "#libro") st.mode = "book";
 if (location.hash === "#liquidaciones") st.mode = "liq";
+if (location.hash === "#historia") st.mode = "hist";
 if (!MODES[st.mode]) st.mode = "liq";
 if (!["both", "below", "above"].includes(st.side)) st.side = "both";
 const save = () => {
@@ -254,9 +267,13 @@ function decode(j) {
 }
 function normalize(mode, j) {
   const { q, vals } = decode(j);
-  const s = { mode, raw: j, q, vals, t0: j.t0, step: j.step_s, rows: j.rows, price0: j.price0, bin: j.bin, generated: j.generated };
-  if (mode === "liq") {
-    s.cols = j.hours; s.layers = j.tiers; s.candles = j.candles;
+  const s = { mode, kind: MODES[mode].kind, raw: j, q, vals, t0: j.t0, step: j.step_s, rows: j.rows, price0: j.price0,
+    bin: j.bin, ratio: j.ratio, generated: j.generated };
+  // filas de precio: tramos fijos de `bin` US$ o, en la historia, logarítmicos (cada uno `ratio` veces el anterior)
+  if (s.ratio) { const lr = Math.log(s.ratio); s.R = (p) => Math.log(p / s.price0) / lr; s.P = (r) => s.price0 * Math.exp(r * lr); }
+  else { s.R = (p) => (p - s.price0) / s.bin; s.P = (r) => s.price0 + r * s.bin; }
+  if (s.kind === "liq") {
+    s.cols = j.cols != null ? j.cols : j.hours; s.layers = j.tiers; s.candles = j.candles;
     s.ref = j.candles.close;  // precio de referencia de cada columna (separa los dos lados)
     s.bubbles = j.realized.map(([c, r, u, long]) => [c, r, u, long ? 0 : 1]);  // 0 = color de largos
   } else {
@@ -275,7 +292,7 @@ async function fetchMode(mode) {
 
 async function show(mode, reload = false) {
   st.mode = mode; save();
-  history.replaceState(null, "", mode === "book" ? "#libro" : "#liquidaciones");
+  history.replaceState(null, "", MODES[mode].hash);
   document.querySelectorAll("#mode button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.m === mode));
   setupControls();
   el("err").hidden = true; canvas.hidden = false;
@@ -294,7 +311,7 @@ async function show(mode, reload = false) {
   const s = st.src;
   if (!st.layersOn[mode] || st.layersOn[mode].length !== s.layers.length) st.layersOn[mode] = s.layers.map(() => true);
   el("layers").innerHTML = s.layers.map((t, i) => `<button data-i="${i}" aria-pressed="${st.layersOn[mode][i]}">${t}</button>`).join("");
-  el("model").textContent = mode === "liq" ? s.raw.model : "";
+  el("model").textContent = s.kind === "liq" ? s.raw.model : "";
   el("updated").textContent = `actualizado ${new Date(s.generated * 1000).toLocaleString("es-AR", { hour12: false })} · ejes en UTC`;
   recompute();
   if (reload && prev && prev.mode === mode && st.view) {  // la recarga automática no cambia el zoom
@@ -311,7 +328,8 @@ function setupControls() {
   el("side-below").textContent = m.below; el("side-above").textContent = m.above;
   el("t-price-lbl").textContent = m.priceLbl; el("t-bubbles-lbl").textContent = m.bubblesLbl;
   el("b0-lbl").textContent = m.b0; el("b1-lbl").textContent = m.b1; el("scale-lbl").textContent = m.scaleLbl;
-  el("notes-liq").hidden = st.mode !== "liq"; el("notes-book").hidden = st.mode !== "book";
+  el("notes-liq").hidden = m.kind !== "liq"; el("notes-book").hidden = m.kind !== "book";
+  el("notes-hist").hidden = st.mode !== "hist";
 }
 
 // suma de las capas elegidas: sum[col * rows + row]
@@ -327,9 +345,10 @@ function recompute() {
 }
 const cell = (col, row) => st.sum[col * st.src.rows + row];
 const layerCell = (t, col, row) => st.src.vals[st.src.q[(t * st.src.cols + col) * st.src.rows + row]];
-const rowPrice = (r) => st.src.price0 + (r + 0.5) * st.src.bin;
+const rowPrice = (r) => st.src.P(r + 0.5);
 const fmtT = (ts) => {
   const d = new Date(ts * 1000);
+  if (st.src && st.src.step >= 86400) return `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)}/${d.getUTCFullYear()}`;
   return `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
 };
 // ¿el tramo va con el lado elegido? (abajo / arriba del precio de esa columna)
@@ -346,26 +365,36 @@ function setWindow(cols) {
   if (s.candles) {
     for (let i = c0; i < c1; i++) { if (s.candles.low[i] != null) lo = Math.min(lo, s.candles.low[i]); if (s.candles.high[i] != null) hi = Math.max(hi, s.candles.high[i]); }
   } else for (let i = c0; i < c1; i++) if (s.ref[i] != null) { lo = Math.min(lo, s.ref[i]); hi = Math.max(hi, s.ref[i]); }
-  if (!isFinite(lo)) { lo = s.price0; hi = s.price0 + s.rows * s.bin; }
+  if (!isFinite(lo)) { lo = s.price0; hi = s.P(s.rows); }
   // libro: hasta donde llega el spot (~1 %); liquidaciones: más aire para ver las franjas
-  const pad = s.mode === "book" ? Math.max((hi - lo) * 0.3, hi * 0.004) : (hi - lo) * 0.6 + hi * 0.01;
-  st.view = { c0, c1: c1 + Math.max(1, (c1 - c0) * 0.02), p0: lo - pad, p1: hi + pad };
+  let p0, p1;
+  if (s.ratio) {  // eje logarítmico: el aire se mide en filas
+    const a = s.R(lo), b = s.R(hi), padR = (b - a) * 0.3 + 4;
+    p0 = s.P(a - padR); p1 = s.P(b + padR);
+  } else {
+    const pad = s.kind === "book" ? Math.max((hi - lo) * 0.3, hi * 0.004) : (hi - lo) * 0.6 + hi * 0.01;
+    p0 = lo - pad; p1 = hi + pad;
+  }
+  st.view = { c0, c1: c1 + Math.max(1, (c1 - c0) * 0.02), p0, p1 };
   clampView();
   document.querySelectorAll("#win button").forEach((b) => b.setAttribute("aria-pressed", +b.dataset.c === cols));
   st.imgKey = ""; requestDraw();
 }
 
 function clampView() {
-  const v = st.view, s = st.src, pMin = s.price0, pMax = s.price0 + s.rows * s.bin;
+  const v = st.view, s = st.src;
   const w = Math.min(Math.max(v.c1 - v.c0, 2), s.cols * 1.05);
   const extra = Math.max(0.5, w * 0.05);  // aire a la derecha del último dato, proporcional a lo que se ve
   if (v.c0 < 0) { v.c0 = 0; v.c1 = w; }
   if (v.c1 > s.cols + extra) { v.c1 = s.cols + extra; v.c0 = v.c1 - w; }
   v.c1 = v.c0 + w;
-  const h = Math.min(Math.max(v.p1 - v.p0, s.bin * 8), Math.max(pMax - pMin, s.bin * 8));
-  if (v.p0 < pMin) { v.p0 = pMin; v.p1 = pMin + h; }
-  if (v.p1 > pMax) { v.p1 = pMax; v.p0 = pMax - h; }
-  v.p1 = v.p0 + h;
+  // el precio se acota en filas (en la historia son logarítmicas): al menos 8 filas, a lo sumo todas
+  let a = v.p0 > 0 || !s.ratio ? s.R(v.p0) : 0, b = v.p1 > 0 || !s.ratio ? s.R(v.p1) : s.rows;
+  const h = Math.min(Math.max(b - a, 8), Math.max(s.rows, 8));
+  if (a < 0) { a = 0; b = h; }
+  if (b > s.rows) { b = s.rows; a = b - h; }
+  b = a + h;
+  v.p0 = s.P(a); v.p1 = s.P(b);
 }
 
 // ---- geometría ----
@@ -376,14 +405,15 @@ function dims() {
 }
 const xOf = (d, col) => d.x0 + (col - st.view.c0) / (st.view.c1 - st.view.c0) * (d.x1 - d.x0);
 const colOf = (d, x) => st.view.c0 + (x - d.x0) / (d.x1 - d.x0) * (st.view.c1 - st.view.c0);
-const yOf = (d, p) => d.y0 + (st.view.p1 - p) / (st.view.p1 - st.view.p0) * (d.y1 - d.y0);
-const pOf = (d, y) => st.view.p1 - (y - d.y0) / (d.y1 - d.y0) * (st.view.p1 - st.view.p0);
+// el eje de precios es lineal en filas: en la historia (filas logarítmicas) queda en escala log
+const yOf = (d, p) => { const s = st.src, b = s.R(st.view.p1); return d.y0 + (b - s.R(p)) / (b - s.R(st.view.p0)) * (d.y1 - d.y0); };
+const pOf = (d, y) => { const s = st.src, b = s.R(st.view.p1); return s.P(b - (y - d.y0) / (d.y1 - d.y0) * (b - s.R(st.view.p0))); };
 
 // imagen del mapa (1 px por columna y tramo), normalizada al máximo de lo visible
 function buildImage() {
   const s = st.src, v = st.view, rows = s.rows;
   const cA = Math.max(0, Math.floor(v.c0)), cB = Math.min(s.cols, Math.ceil(v.c1));
-  const rA = Math.max(0, Math.floor((v.p0 - s.price0) / s.bin)), rB = Math.min(rows, Math.ceil((v.p1 - s.price0) / s.bin));
+  const rA = Math.max(0, Math.floor(s.R(v.p0))), rB = Math.min(rows, Math.ceil(s.R(v.p1)));
   const key = [s.mode, s.generated, cA, cB, rA, rB, st.side, st.scale, st.gain, st.layersOn[st.mode].join()].join("|");
   if (key === st.imgKey) return;
   st.imgKey = key;
@@ -413,6 +443,23 @@ function niceStep(range, target) {
   const raw = range / target, p = 10 ** Math.floor(Math.log10(raw));
   return [1, 2, 2.5, 5, 10].map((m) => m * p).find((x) => x >= raw);
 }
+// precios del eje: pasos redondos; en escala log el paso se achica hacia abajo para que no se amontonen
+function priceTicks(d) {
+  const v = st.view, s = st.src, target = Math.max(4, (d.y1 - d.y0) / 55), out = [];
+  if (!s.ratio) {
+    const step = niceStep(v.p1 - v.p0, target);
+    for (let p = Math.ceil(v.p0 / step) * step; p <= v.p1; p += step) out.push(p);
+    return out;
+  }
+  const perTick = Math.log(v.p1 / v.p0) / target;  // ~55 px en log
+  for (let p = v.p0; out.length < 60;) {
+    const step = niceStep(p * (Math.exp(perTick) - 1), 1);
+    p = Math.floor(p / step + 1e-9) * step + step;
+    if (p > v.p1) break;
+    out.push(p);
+  }
+  return out;
+}
 const TICKS_S = [60, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200, 86400, 172800, 345600, 604800];
 
 function draw() {
@@ -430,21 +477,25 @@ function draw() {
   ctx.save();
   ctx.beginPath(); ctx.rect(d.x0, d.y0, d.x1 - d.x0, d.y1 - d.y0); ctx.clip();
   ctx.imageSmoothingEnabled = false;
-  const sy = s.rows - (v.p1 - s.price0) / s.bin, sh = (v.p1 - v.p0) / s.bin;
+  const sy = s.rows - s.R(v.p1), sh = s.R(v.p1) - s.R(v.p0);
   ctx.drawImage(off, v.c0, sy, v.c1 - v.c0, sh, d.x0, d.y0, d.x1 - d.x0, d.y1 - d.y0);
 
   // grilla
   ctx.strokeStyle = css("--heat-grid"); ctx.lineWidth = 1;
-  const pStep = niceStep(v.p1 - v.p0, Math.max(4, (d.y1 - d.y0) / 55));
-  for (let p = Math.ceil(v.p0 / pStep) * pStep; p <= v.p1; p += pStep) {
+  const pTicks = priceTicks(d);
+  for (const p of pTicks) {
     const y = Math.round(yOf(d, p)) + 0.5; ctx.beginPath(); ctx.moveTo(d.x0, y); ctx.lineTo(d.x1, y); ctx.stroke();
   }
   const visS = (v.c1 - v.c0) * s.step, maxTicks = Math.max(3, (d.x1 - d.x0) / 90);
-  const tStep = TICKS_S.find((x) => x >= s.step && visS / x <= maxTicks) || 604800;
+  const tStep = TICKS_S.find((x) => x >= s.step && visS / x <= maxTicks);
+  // más de unas semanas a la vista: marcas el 1.º de cada 1, 2, 3, 6 o 12 meses
+  const months = tStep ? 0 : [1, 2, 3, 6, 12, 24].find((k) => visS / (k * 30.44 * 86400) <= maxTicks) || 24;
   const tTicks = [];
   for (let c = Math.ceil(v.c0); c <= v.c1; c++) {
-    const ts = s.t0 + c * s.step;
-    if (ts % tStep === 0) { tTicks.push([c, ts]); const x = Math.round(xOf(d, c)) + 0.5; ctx.beginPath(); ctx.moveTo(x, d.y0); ctx.lineTo(x, d.y1); ctx.stroke(); }
+    const ts = s.t0 + c * s.step, dt = new Date(ts * 1000);
+    const on = tStep ? ts % tStep === 0
+      : ts % 86400 === 0 && dt.getUTCDate() === 1 && (dt.getUTCFullYear() * 12 + dt.getUTCMonth()) % months === 0;
+    if (on) { tTicks.push([c, ts]); const x = Math.round(xOf(d, c)) + 0.5; ctx.beginPath(); ctx.moveTo(x, d.y0); ctx.lineTo(x, d.y1); ctx.stroke(); }
   }
 
   const cA = Math.max(0, Math.floor(v.c0)), cB = Math.min(s.cols, Math.ceil(v.c1)), bw = (d.x1 - d.x0) / (v.c1 - v.c0);
@@ -480,12 +531,12 @@ function draw() {
 
   // burbujas: liquidaciones reales o ballenas
   if (st.show.bubbles && s.bubbles.length) {
-    const scale = s.mode === "book" ? 4e5 : 1.5e5;
+    const scale = s.kind === "book" ? 4e5 : s.step >= 86400 ? 2e6 : 1.5e5;
     for (const [col, row, usd, kind] of s.bubbles) {
       if (col < v.c0 - 1 || col > v.c1) continue;
       const p = rowPrice(row);
       if (p < v.p0 || p > v.p1) continue;
-      const r = Math.min(s.mode === "book" ? 12 : 9, 1 + Math.sqrt(usd / scale) * 2);
+      const r = Math.min(s.kind === "book" ? 12 : 9, 1 + Math.sqrt(usd / scale) * 2);
       ctx.beginPath(); ctx.arc(xOf(d, col + 0.5), yOf(d, p), r, 0, 2 * Math.PI);
       ctx.fillStyle = kind ? css("--liq-short") : css("--liq-long");
       ctx.globalAlpha = 0.7; ctx.fill(); ctx.globalAlpha = 1;
@@ -514,7 +565,7 @@ function draw() {
 
   // eje de precios y precio actual
   ctx.fillStyle = css("--heat-text"); ctx.font = "11px system-ui, sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
-  for (let p = Math.ceil(v.p0 / pStep) * pStep; p <= v.p1; p += pStep) ctx.fillText(fmtP(p), d.x1 + d.prof + 8, yOf(d, p));
+  for (const p of pTicks) ctx.fillText(fmtP(p), d.x1 + d.prof + 8, yOf(d, p));
   let last = null;
   for (let i = s.cols - 1; i >= 0 && last == null; i--) last = s.ref[i];
   const yLast = last == null ? -1 : yOf(d, last);
@@ -528,7 +579,9 @@ function draw() {
   ctx.fillStyle = css("--heat-text"); ctx.font = "11px system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "top";
   for (const [col, ts] of tTicks) {
     const dt = new Date(ts * 1000);
-    const lab = dt.getUTCHours() === 0 && dt.getUTCMinutes() === 0 ? `${pad(dt.getUTCDate())}/${pad(dt.getUTCMonth() + 1)}`
+    const lab = months >= 12 ? String(dt.getUTCFullYear())
+      : months ? `${pad(dt.getUTCMonth() + 1)}/${String(dt.getUTCFullYear()).slice(2)}`
+      : dt.getUTCHours() === 0 && dt.getUTCMinutes() === 0 ? `${pad(dt.getUTCDate())}/${pad(dt.getUTCMonth() + 1)}`
       : `${pad(dt.getUTCHours())}:${pad(dt.getUTCMinutes())}`;
     ctx.fillText(lab, xOf(d, col), d.y1 + 6);
   }
@@ -547,7 +600,7 @@ function drawProfile(d) {
   let col = st.hover && st.hover.col != null ? st.hover.col : s.cols - 1;
   if (!(st.hover && st.hover.col != null)) while (col > 0 && s.ref[col] == null) col--;
   const x0 = d.x1 + 2, w = d.prof - 6, ref = s.ref[col];
-  const rA = Math.max(0, Math.floor((v.p0 - s.price0) / s.bin)), rB = Math.min(s.rows, Math.ceil((v.p1 - s.price0) / s.bin));
+  const rA = Math.max(0, Math.floor(s.R(v.p0))), rB = Math.min(s.rows, Math.ceil(s.R(v.p1)));
   ctx.fillStyle = "rgba(255,255,255,0.03)"; ctx.fillRect(x0, d.y0, w, d.y1 - d.y0);
   let max = 0;
   for (let r = rA; r < rB; r++) if (keepSide(col, r)) max = Math.max(max, cell(col, r));
@@ -555,8 +608,8 @@ function drawProfile(d) {
     const top = [];
     for (let r = rA; r < rB; r++) {
       const x = cell(col, r); if (!x || !keepSide(col, r)) continue;
-      const p = s.price0 + r * s.bin, ya = yOf(d, p + s.bin), yb = yOf(d, p);
-      const len = x / max * w, below = ref != null && p + s.bin / 2 < ref;
+      const ya = yOf(d, s.P(r + 1)), yb = yOf(d, s.P(r));
+      const len = x / max * w, below = ref != null && rowPrice(r) < ref;
       ctx.fillStyle = below ? css("--liq-long") : css("--liq-short");
       ctx.globalAlpha = 0.75; ctx.fillRect(x0, ya, len, Math.max(1, yb - ya - (yb - ya > 3 ? 1 : 0))); ctx.globalAlpha = 1;
       top.push([x, (ya + yb) / 2, len]);
@@ -576,7 +629,8 @@ function drawScale() {
     for (let y = 0; y < 10; y++) img.data.set(LUT.subarray(k, k + 4), (y * 220 + x) * 4);
   }
   g.putImageData(img, 0, 0);
-  el("scale-max").textContent = `· máximo en lo visible ${fmtUsd(st.max || 0)} por tramo de US$ ${nf(0).format(st.src.bin)}`
+  el("scale-max").textContent = `· máximo en lo visible ${fmtUsd(st.max || 0)} por tramo de `
+    + (st.src.ratio ? `${nf(1).format((st.src.ratio - 1) * 100)} %` : `US$ ${nf(0).format(st.src.bin)}`)
     + (st.scale === "log" ? " (escala log)" : "");
 }
 
@@ -596,10 +650,10 @@ function stats() {
   };
   // franja mayor de cada lado, sumando tramos vecinos (0,5 % en liquidaciones, US$ 50 en el libro)
   const biggest = (below) => {
-    const w = s.mode === "liq" ? Math.max(1, Math.round(price * 0.005 / s.bin)) : 5;
+    const w = s.kind === "book" ? 5 : Math.max(1, Math.round(s.R(price * 1.005) - s.R(price)));
     let best = null;
     for (let r = 0; r + w <= s.rows; r++) {
-      const pc = s.price0 + (r + w / 2) * s.bin;
+      const pc = s.P(r + w / 2);
       if (below ? pc >= price : pc <= price) continue;
       let x = 0; for (let k = r; k < r + w; k++) x += all(k);
       if (!best || x > best.x) best = { x, p: pc };
@@ -609,9 +663,10 @@ function stats() {
   const tile = (k, v, sub) => `<div class="card stat"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${sub}</div></div>`;
   const dist = (p) => `${nf(2).format((p / price - 1) * 100)} %`;
   const bl = biggest(true), ba = biggest(false);
-  if (s.mode === "liq") {
+  if (s.kind === "liq") {
     el("stats").innerHTML =
-      tile("Precio (perpetuo, cierre 1 h)", fmtP(price), fmtT(s.t0 + col * s.step) + " UTC")
+      tile(s.step >= 86400 ? "Precio (perpetuo, cierre del día)" : "Precio (perpetuo, cierre 1 h)", fmtP(price),
+        fmtT(s.t0 + col * s.step) + (s.step >= 86400 ? " · promedio del día" : " UTC"))
       + tile("Cortos a liquidar hasta +2 %", fmtUsd(within(2, false)), `hasta +5 %: ${fmtUsd(within(5, false))}`)
       + tile("Largos a liquidar hasta −2 %", fmtUsd(within(2, true)), `hasta −5 %: ${fmtUsd(within(5, true))}`)
       + (ba ? tile("Franja mayor arriba (0,5 %)", fmtP(ba.p), `${fmtUsd(ba.x)} · ${dist(ba.p)}`) : "")
@@ -630,19 +685,19 @@ function stats() {
 function tooltip() {
   const tip = el("tip"), h = st.hover, s = st.src;
   if (!h || h.col == null || !s) { tip.hidden = true; return; }
-  const col = h.col, row = Math.floor((h.price - s.price0) / s.bin);
-  if (row < 0 || row >= s.rows) { tip.hidden = true; return; }
-  const lo = s.price0 + row * s.bin, on = st.layersOn[st.mode], m = MODES[st.mode];
+  const col = h.col, row = Math.floor(s.R(h.price));
+  if (!(row >= 0 && row < s.rows)) { tip.hidden = true; return; }
+  const lo = s.P(row), hiP = s.P(row + 1), on = st.layersOn[st.mode], m = MODES[st.mode];
   const parts = s.layers.map((t, i) => [t, layerCell(i, col, row), on[i]]);
   const total = parts.reduce((a, [, x, o]) => a + (o ? x : 0), 0);
-  const bub = s.bubbles.filter(([c, r]) => c === col && (s.mode === "book" || r === row));
+  const bub = s.bubbles.filter(([c, r]) => c === col && (s.kind === "book" || r === row));
   const bubUsd = bub.reduce((a, x) => a + x[2], 0);
-  const ref = s.ref[col], side = ref == null ? "below" : lo + s.bin / 2 < ref ? "below" : "above";
-  let html = `<div><b>${fmtT(s.t0 + col * s.step)} UTC</b> · ${fmtP(lo)} – ${fmtP(lo + s.bin)}</div>`
+  const ref = s.ref[col], side = ref == null ? "below" : rowPrice(row) < ref ? "below" : "above";
+  let html = `<div><b>${fmtT(s.t0 + col * s.step)} UTC</b> · ${fmtP(lo)} – ${fmtP(hiP)}</div>`
     + `<div class="row"><span>${m.what(side)}</span><b>${total ? fmtUsd(total) : "–"}</b></div>`
     + parts.filter(([, x]) => x).map(([t, x, o]) => `<div class="row" style="opacity:${o ? 1 : 0.45}"><span>· ${t}</span><span>${fmtUsd(x)}</span></div>`).join("");
   if (bubUsd) {
-    if (s.mode === "book") {
+    if (s.kind === "book") {
       const buy = bub.filter((x) => x[3]).reduce((a, x) => a + x[2], 0);
       html += `<div class="row"><span>${m.bubbleWhat}</span><b>${fmtUsd(bubUsd)}</b></div><div class="row"><span>· compras / ventas</span><span>${fmtUsd(buy)} / ${fmtUsd(bubUsd - buy)}</span></div>`;
     } else html += `<div class="row"><span>${m.bubbleWhat}</span><b>${fmtUsd(bubUsd)}</b></div>`;
@@ -682,14 +737,15 @@ canvas.addEventListener("pointermove", (ev) => {
   if (drag) {
     const dx = ev.offsetX - drag.x, dy = ev.offsetY - drag.y, v = st.view, o = drag.v;
     if (drag.onAxis) {  // arrastrar el eje de precios: zoom vertical
-      const f = Math.exp(dy / 200), mid = (o.p0 + o.p1) / 2, h = (o.p1 - o.p0) * f;
-      v.p0 = mid - h / 2; v.p1 = mid + h / 2;
+      const s = st.src, a = s.R(o.p0), b = s.R(o.p1), f = Math.exp(dy / 200), mid = (a + b) / 2, h = (b - a) * f;
+      v.p0 = s.P(mid - h / 2); v.p1 = s.P(mid + h / 2);
     } else if (drag.onTime) {  // arrastrar el eje de tiempo: hacia la derecha acerca, hacia la izquierda aleja (fijo el último dato)
       const f = Math.exp(-dx / 150), a = Math.min(o.c1, st.src.cols);
       v.c0 = a - (a - o.c0) * f; v.c1 = a + (o.c1 - a) * f;
     } else {
-      const dc = dx / (d.x1 - d.x0) * (o.c1 - o.c0), dp = dy / (d.y1 - d.y0) * (o.p1 - o.p0);
-      v.c0 = o.c0 - dc; v.c1 = o.c1 - dc; v.p0 = o.p0 + dp; v.p1 = o.p1 + dp;
+      const s = st.src, a = s.R(o.p0), b = s.R(o.p1);
+      const dc = dx / (d.x1 - d.x0) * (o.c1 - o.c0), dr = dy / (d.y1 - d.y0) * (b - a);
+      v.c0 = o.c0 - dc; v.c1 = o.c1 - dc; v.p0 = s.P(a + dr); v.p1 = s.P(b + dr);
     }
     clampView(); unpressWindow();
   }
@@ -714,8 +770,8 @@ canvas.addEventListener("wheel", (ev) => {
   ev.preventDefault();
   const d = dims(), f = Math.exp(ev.deltaY * 0.0015);
   if (ev.shiftKey || ev.offsetX > d.x1) {
-    const p = pOf(d, ev.offsetY), v = st.view;
-    v.p0 = p - (p - v.p0) * f; v.p1 = p + (v.p1 - p) * f;
+    const s = st.src, v = st.view, r = s.R(pOf(d, ev.offsetY)), a = s.R(v.p0), b = s.R(v.p1);
+    v.p0 = s.P(r - (r - a) * f); v.p1 = s.P(r + (b - r) * f);
   } else zoomTime(d, ev.offsetX, f);
   clampView(); unpressWindow(); hoverAt(d, ev.offsetX, ev.offsetY); requestDraw();
 }, { passive: false });
@@ -769,7 +825,7 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => requ
 
 show(st.mode);
 // el libro se rearma cada 5 minutos y las liquidaciones cada hora: se recarga solo, sin cambiar el zoom
-setInterval(() => { delete st.cache[st.mode === "book" ? "liq" : "book"]; show(st.mode, true); }, 5 * 60 * 1000);
+setInterval(() => { for (const k in st.cache) if (k !== st.mode) delete st.cache[k]; show(st.mode, true); }, 5 * 60 * 1000);
 </script>
 </body>
 </html>

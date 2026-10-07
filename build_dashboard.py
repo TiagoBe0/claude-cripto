@@ -16,6 +16,8 @@ Escribe en <data_dir>/dashboard/:
 - liq_heatmap.json               mapa de calor del mapa estimado de liquidaciones (liquidez.heatmap): USD por
                                  hora, tramo de precio y apalancamiento en los últimos 30 días, con las velas
                                  de 1 h del perpetuo y las liquidaciones reales en la misma grilla (liquidez.html)
+- liq_heatmap_hist.json          el mismo mapa de toda la historia (desde 2020 con data/research), por día y con
+                                 tramos de precio logarítmicos de 0,5 % (liquidez.heatmap_history)
 - strategy.json                  estrategia 4h (estrategia/backtest.py): trades desde 2018,
                                  curva de capital contra comprar y mantener, métricas
                                  dentro y fuera de muestra y trades del ejecutor
@@ -463,6 +465,27 @@ def heatmap_data(data_dir: Path) -> dict:
     return hm
 
 
+def heatmap_history_data(data_dir: Path) -> dict:
+    hm = liquidez.heatmap_history(data_dir)
+    hm["candles"] = _columns(hm.pop("days"), {"open": 1, "high": 1, "low": 1, "close": 1})
+    # liquidaciones reales por día en la misma grilla (tramos logarítmicos): [día, fila, USD, 1 largo / 0 corto]
+    hm["realized"] = []
+    lp = data_dir / f"{SYMBOL}_liquidations.csv"
+    if lp.exists() and lp.stat().st_size:
+        q = _read(lp, ["side", "price", "usd"])
+        q = q[(q.index >= pd.Timestamp(hm["t0"], unit="s", tz="UTC")) & (q.price > 0)]
+        q = q.assign(col=(q.index.as_unit("s").astype("int64") - hm["t0"]) // hm["step_s"],
+                     row=np.floor(np.log(q.price / hm["price0"]) / np.log(hm["ratio"])).astype(int),
+                     long=(q.side == "long").astype(int))
+        q = q[(q.col < hm["cols"]) & (q.row >= 0) & (q.row < hm["rows"])]
+        g = q.groupby(["col", "row", "long"]).usd.sum().reset_index()
+        hm["realized"] = [[int(c), int(r), round(float(u)), int(lg)] for c, r, lg, u in g[["col", "row", "long", "usd"]].itertuples(index=False)]
+    hm["generated"] = int(time.time())
+    hm["model"] = "OI de Binance desde " + pd.Timestamp(hm["t0"], unit="s").strftime("%m/%Y") \
+        + ", promedio de cada día, apalancamiento supuesto " + ", ".join(f"{lv}x {w:.0%}" for lv, w in liquidez.LEVERAGE_MIX.items())
+    return hm
+
+
 STABLE_STRONG_PCTL = 95  # emisión neta por encima (o quema por debajo de 100 - esto) = día fuerte
 MARKET_DAYS = 400  # lo que viaja al navegador; la API gratis de CoinGecko da 365 días
 CEX_HOURS = 90 * 24  # fotos por hora de los flujos a exchanges que viajan al navegador
@@ -603,6 +626,10 @@ def build(data_dir: Path) -> Path:
         _write(out_dir / "liq_heatmap.json", heatmap_data(data_dir))
     except (OSError, KeyError, IndexError, ValueError) as e:
         print(f"liq_heatmap: {type(e).__name__}: {e}", file=sys.stderr)
+    try:
+        _write(out_dir / "liq_heatmap_hist.json", heatmap_history_data(data_dir))
+    except (OSError, KeyError, IndexError, ValueError) as e:
+        print(f"liq_heatmap_hist: {type(e).__name__}: {e}", file=sys.stderr)
     return out_dir
 
 
