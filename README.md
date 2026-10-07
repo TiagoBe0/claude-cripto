@@ -128,10 +128,12 @@ systemctl --user disable --now cripto-dashboard  # desinstalar
   ventana que ya ocurrió es exacta; los cierres futuros se suponen iguales al último (línea) o yendo a ±1 desvío
   típico en el tramo (líneas tenues, desvío de las últimas 100 velas × √velas). Avisa si se cruzan dentro del tramo.
   Se calcula en el navegador, con la vela en vivo.
-- *Velas posibles* (a / b / c, se prenden por separado para comparar; N = 10/20/50): 3 velas amarillas/negras
+- *Velas posibles* (a / b / c / d, se prenden por separado para comparar; N = 10/20/50): 3 velas amarillas/negras
   después de la vela en curso, con el cuerpo y las sombras promedio de las últimas N velas cerradas (en % de la
   apertura); cada una abre donde cerró la anterior. Dirección: **a** la de la mayoría de las N velas; **b** el signo
-  de la suma de los cuerpos, con el tamaño de las velas de ese lado; **c** alterna empezando contra la vela en curso.
+  de la suma de los cuerpos, con el tamaño de las velas de ese lado; **c** alterna empezando contra la vela en curso;
+  **d** según el MACD 12/26/9 del timeframe a la vista (línea MACD vs 0 = tendencia; histograma a favor/en contra y
+  creciendo/achicándose = impulso TTT, pierde fuerza TT−T, corrección −T−TT, corrección terminando −TTT).
   No predicen: muestran el tamaño típico de las próximas velas. Se calcula en el navegador.
 - *Mapa de liquidez* (interruptor arriba, se recuerda en el navegador), sobre el panel de precio:
   barras horizontales con las liquidaciones **estimadas** por tramo de 0,5% hasta ±15% del precio (rojo = largos,

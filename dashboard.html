@@ -335,6 +335,7 @@
       <label title="Dirección: la de la mayoría de las últimas N velas; tamaño: promedio de todas"><input type="checkbox" data-ghost="a"> <span class="gsw" style="--g:#f2c200"></span>a mayoría</label>
       <label title="Dirección: el signo de la suma de los cuerpos (momentum neto); tamaño: promedio solo de las velas de esa dirección"><input type="checkbox" data-ghost="b"> <span class="gsw" style="--g:#ff8a00"></span>b momentum</label>
       <label title="Sin dirección: alterna empezando contra la vela en curso (si sube: baja/sube/baja; si baja: sube/baja/sube); tamaño: promedio de todas"><input type="checkbox" data-ghost="c"> <span class="gsw" style="--g:#a8c400"></span>c neutral</label>
+      <label title="Dirección según el MACD 12/26/9 del timeframe que se está viendo: la línea MACD (arriba o abajo de 0) da la tendencia y el histograma si hay impulso o corrección; tamaño: promedio de todas"><input type="checkbox" data-ghost="d"> <span class="gsw" style="--g:#26c6da"></span>d MACD</label>
       <select id="ghost-n" aria-label="Velas promediadas">
         <option value="10">N = 10</option><option value="20">N = 20</option><option value="50">N = 50</option>
       </select></span>
@@ -1103,9 +1104,15 @@ function projLabel() {
 //   a mayoría:  la de la mayoría de las N velas (empate: la de la última); tamaño promedio de todas.
 //   b momentum: el signo de la suma de los cuerpos; tamaño promedio solo de las velas de esa dirección.
 //   c neutral:  alterna empezando contra la vela en curso (el precio oscila); tamaño promedio de todas.
+//   d MACD:     según el MACD 12/26/9 del timeframe a la vista (por eso 1w y 4h pueden dar cosas distintas);
+//               la línea MACD da la tendencia T (arriba de 0 = sube) y el histograma la fase; tamaño de todas:
+//                 histograma a favor de T y creciendo   → impulso:                T T T
+//                 a favor de T pero achicándose         → impulso perdiendo fuerza: T T −T
+//                 en contra de T y creciendo            → corrección:             −T −T T
+//                 en contra de T pero achicándose       → corrección terminando:  −T T T
 // No predicen el precio: muestran cómo se vería el siguiente tramo con velas de tamaño típico.
-const GHOST_COLORS = { a: "#f2c200", b: "#ff8a00", c: "#a8c400" };
-const GHOST_NAMES = { a: "mayoría", b: "momentum", c: "neutral" };
+const GHOST_COLORS = { a: "#f2c200", b: "#ff8a00", c: "#a8c400", d: "#26c6da" };
+const GHOST_NAMES = { a: "mayoría", b: "momentum", c: "neutral", d: "MACD" };
 const GHOST_BARS = 3;
 const ghost = { modes: new Set(["b"]), n: 20, info: {} };
 try {
@@ -1145,9 +1152,28 @@ function ghostMean(rows) {
   return { body: avg("body"), up: avg("up"), lo: avg("lo") };
 }
 
+// Últimos dos valores del MACD del timeframe a la vista (velas que trae el servidor)
+function ghostMacd(c) {
+  let i = c.t.length - 1;
+  while (i > 0 && (c.macd_hist[i] == null || c.macd[i] == null)) i--;
+  if (i < 1 || c.macd_hist[i - 1] == null) return null;
+  return { macd: c.macd[i], hist: c.macd_hist[i], prev: c.macd_hist[i - 1] };
+}
+
 // Direcciones de las 3 velas y tamaño promedio según el modo
-function ghostPlan(mode, rows, liveDir) {
+function ghostPlan(mode, rows, liveDir, c) {
   const all = ghostMean(rows), lastDir = rows[rows.length - 1].dir || 1;
+  if (mode === "d") {
+    const k = c.macd && c.macd_hist ? ghostMacd(c) : null;
+    if (!k) return null;
+    const T = Math.sign(k.macd) || Math.sign(k.hist) || lastDir;
+    const favor = Math.sign(k.hist) === T, grows = Math.abs(k.hist) > Math.abs(k.prev);
+    const [pat, note] = favor
+      ? (grows ? [[1, 1, 1], "impulso"] : [[1, 1, -1], "impulso perdiendo fuerza"])
+      : (grows ? [[-1, -1, 1], "corrección"] : [[-1, 1, 1], "corrección terminando"]);
+    return { dirs: pat.map((x) => x * T), size: all,
+      note: `tendencia ${T > 0 ? "alcista" : "bajista"}, ${note}` };
+  }
   if (mode === "a") {
     const ups = rows.filter((r) => r.dir > 0).length, downs = rows.filter((r) => r.dir < 0).length;
     const d = ups > downs ? 1 : downs > ups ? -1 : lastDir;
@@ -1174,7 +1200,9 @@ function setGhosts() {
   const liveDir = b ? Math.sign(b.close - b.open) : 0;
   for (const m of Object.keys(GHOST_COLORS)) {
     if (!ghost.modes.has(m) || !rows.length || price == null) { S["ghost_" + m].setData([]); continue; }
-    const { dirs, size } = ghostPlan(m, rows, liveDir);
+    const plan = ghostPlan(m, rows, liveDir, c);
+    if (!plan) { S["ghost_" + m].setData([]); continue; }
+    const { dirs, size, note } = plan;
     const bars = [];
     let open = price;
     dirs.forEach((d, j) => {
@@ -1184,7 +1212,7 @@ function setGhosts() {
       open = close;
     });
     S["ghost_" + m].setData(bars);
-    ghost.info[m] = { dirs, size, price, end: open, n: rows.length };
+    ghost.info[m] = { dirs, size, price, end: open, n: rows.length, note };
   }
   renderLabels();
 }
@@ -1197,7 +1225,7 @@ function ghostLabel() {
   return ms.map((m) => {
       const g = ghost.info[m];
       return `<br><span class="gsw" style="--g:${GHOST_COLORS[m]}"></span>Velas posibles ${m} ${GHOST_NAMES[m]} `
-        + `${g.dirs.map((d) => (d > 0 ? "▲" : "▼")).join("")} cuerpo <b>${pct(g.size.body)}</b>`
+        + `${g.dirs.map((d) => (d > 0 ? "▲" : "▼")).join("")}${g.note ? ` <span class="muted">(${g.note})</span>` : ""} cuerpo <b>${pct(g.size.body)}</b>`
         + ` <span class="muted">sombras ↑${pct(g.size.up)} ↓${pct(g.size.lo)}</span>`
         + ` → <b>${fmtPrice(g.end)}</b> (${chg(g.end / g.price - 1)})`
         + ` <span class="muted">promedio de ${g.n} velas</span>`;
