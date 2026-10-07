@@ -197,6 +197,10 @@
   .pane-label .box.ov { margin-left: 0; opacity: 1; }
   .sw { display: inline-block; width: 14px; height: 0; border-top: 2px solid; vertical-align: middle; margin: 0 4px 0 8px; }
   .sw.dash { border-top-style: dashed; }
+  /* velas posibles: muestra del color de cada modo (relleno = sube, negro con borde = baja) */
+  .ghost-ctl label { display: inline-flex; align-items: center; gap: 3px; cursor: pointer; }
+  .gsw { display: inline-block; width: 6px; height: 11px; background: var(--g); border: 1px solid var(--g);
+         box-shadow: 8px 0 0 -1px #000, 8px 0 0 0 var(--g); margin-right: 8px; vertical-align: middle; }
 
   .perf { padding: 14px; display: grid; gap: 12px; }
   .perf h2 { font-size: 15px; margin: 0; font-weight: 600; }
@@ -327,6 +331,13 @@
       <select id="proj-bars" aria-label="Velas a proyectar">
         <option value="10">10 velas</option><option value="20">20 velas</option><option value="50">50 velas</option>
       </select></label>
+    <span class="toggle ghost-ctl" title="3 velas hipotéticas después de la vela en curso, con el cuerpo y las sombras promedio de las últimas N velas cerradas. No predicen: muestran el tamaño típico de una vela">Velas posibles
+      <label title="Dirección: la de la mayoría de las últimas N velas; tamaño: promedio de todas"><input type="checkbox" data-ghost="a"> <span class="gsw" style="--g:#f2c200"></span>a mayoría</label>
+      <label title="Dirección: el signo de la suma de los cuerpos (momentum neto); tamaño: promedio solo de las velas de esa dirección"><input type="checkbox" data-ghost="b"> <span class="gsw" style="--g:#ff8a00"></span>b momentum</label>
+      <label title="Sin dirección: alterna empezando contra la vela en curso (si sube: baja/sube/baja; si baja: sube/baja/sube); tamaño: promedio de todas"><input type="checkbox" data-ghost="c"> <span class="gsw" style="--g:#a8c400"></span>c neutral</label>
+      <select id="ghost-n" aria-label="Velas promediadas">
+        <option value="10">N = 10</option><option value="20">N = 20</option><option value="50">N = 50</option>
+      </select></span>
     <label class="toggle" id="strat-toggle-label" hidden><input type="checkbox" id="strat-toggle" checked> Estrategia 4h</label>
     <span class="spacer"></span>
     <button type="button" class="fs-btn" id="fs-btn" aria-pressed="false" title="Pantalla completa (Esc para salir)">⛶ Pantalla completa</button>
@@ -656,6 +667,12 @@ function buildChart() {
     S[k + "Hi"] = chart.addSeries(LWC.LineSeries, { ...quiet, lineWidth: 1, lineStyle: LWC.LineStyle.Dotted }, 0);
     S[k + "Lo"] = chart.addSeries(LWC.LineSeries, { ...quiet, lineWidth: 1, lineStyle: LWC.LineStyle.Dotted }, 0);
   }
+  // Velas posibles: una serie por modo, sin línea ni etiqueta de precio para no confundirlas con el precio real
+  for (const [m, color] of Object.entries(GHOST_COLORS)) {
+    S["ghost_" + m] = chart.addSeries(LWC.CandlestickSeries, { priceFormat: usd, priceLineVisible: false,
+      lastValueVisible: false, upColor: color, downColor: "#000000", borderUpColor: color, borderDownColor: color,
+      wickUpColor: color, wickDownColor: color }, 0);
+  }
   S.stratEma = chart.addSeries(LWC.LineSeries, { ...quiet, lineWidth: 2 }, 0);
   S.stratDon = chart.addSeries(LWC.LineSeries, { ...quiet, lineWidth: 1, lineStyle: LWC.LineStyle.Dotted,
     lineType: LWC.LineType.WithSteps }, 0);
@@ -883,6 +900,7 @@ function setChartData(data, keepView) {
   S.fng.setData(line(c.t, c.fng));
   setWhales(data.whales);
   setProjection();
+  setGhosts();
   applyLiveBar();
 
   if (prevRange && !atRightEdge) {
@@ -890,7 +908,8 @@ function setChartData(data, keepView) {
   } else {
     // Vista inicial: ~1 mes en 1h, 2 en 2h y 3h, 3 en 4h y 5h, 1 año en 1d y 3 años en 1w
     const n = c.t.length, span = { "1h": 24 * 30, "2h": 12 * 60, "3h": 8 * 60, "4h": 6 * 90, "5h": 24 / 5 * 90 | 0, "1d": 365, "1w": 156 }[data.timeframe] || 365;
-    ts.setVisibleLogicalRange({ from: Math.max(0, n - span), to: n + 3 + (proj.on ? proj.bars : 0) });
+    const ahead = Math.max(proj.on ? proj.bars : 0, ghost.modes.size ? GHOST_BARS + 1 : 0);
+    ts.setVisibleLogicalRange({ from: Math.max(0, n - span), to: n + 3 + ahead });
   }
   renderLabels();
   requestAnimationFrame(positionLabels);
@@ -934,6 +953,7 @@ function renderLabels(param) {
     price: `Precio spot ${c ? `A <b>${fmtPrice(c.open)}</b> M <b>${fmtPrice(c.high)}</b> m <b>${fmtPrice(c.low)}</b> C <b>${fmtPrice(c.close)}</b>` : ""}`
       + `${sw(t.muted, true)}SMA 50 <b>${fmtPrice(val(v.s50))}</b>${sw(t.primary)}SMA 200 <b>${fmtPrice(val(v.s200))}</b>`
       + projLabel()
+      + ghostLabel()
       + (stratOn && current.data.candles && current.data.candles.strat_ema
         ? `<br>Estrategia 4h${sw(css("--strat"))}EMA 1200 <b>${fmtPrice(val(v.se))}</b>`
           + `${sw(css("--strat"), true)}Donchian 120 <b>${fmtPrice(val(v.sd))}</b>`
@@ -1074,6 +1094,114 @@ function projLabel() {
   return `<br>Proyección a ${p.bars} velas con el precio quieto en <b>${fmtPrice(p.price)}</b>`
     + ` <span class="muted">(rango: ±${nf(1).format(p.move * 100)} % en el tramo)</span>`
     + one(50, t.muted) + one(200, t.primary) + cross;
+}
+
+// ---------- velas posibles ----------
+// 3 velas hipotéticas a partir de la vela en curso: la primera abre en el precio actual y cada una abre donde
+// cerró la anterior. Cuerpo y sombras = promedio de las últimas N velas cerradas, medidos en % de la apertura
+// (así no pesa que el precio haya cambiado mucho dentro de la ventana). Cambia cómo se elige la dirección:
+//   a mayoría:  la de la mayoría de las N velas (empate: la de la última); tamaño promedio de todas.
+//   b momentum: el signo de la suma de los cuerpos; tamaño promedio solo de las velas de esa dirección.
+//   c neutral:  alterna empezando contra la vela en curso (el precio oscila); tamaño promedio de todas.
+// No predicen el precio: muestran cómo se vería el siguiente tramo con velas de tamaño típico.
+const GHOST_COLORS = { a: "#f2c200", b: "#ff8a00", c: "#a8c400" };
+const GHOST_NAMES = { a: "mayoría", b: "momentum", c: "neutral" };
+const GHOST_BARS = 3;
+const ghost = { modes: new Set(["b"]), n: 20, info: {} };
+try {
+  const m = localStorage.getItem("ghost-modes");
+  if (m != null) ghost.modes = new Set([...m].filter((x) => x in GHOST_COLORS));
+  const n = +localStorage.getItem("ghost-n"); if ([10, 20, 50].includes(n)) ghost.n = n;
+} catch (e) { /* sin storage: valores por defecto */ }
+document.querySelectorAll("[data-ghost]").forEach((el) => {
+  el.checked = ghost.modes.has(el.dataset.ghost);
+  el.addEventListener("change", () => {
+    ghost.modes[el.checked ? "add" : "delete"](el.dataset.ghost);
+    try { localStorage.setItem("ghost-modes", [...ghost.modes].sort().join("")); } catch (e) { /* nada */ }
+    setGhosts();
+  });
+});
+document.getElementById("ghost-n").value = String(ghost.n);
+document.getElementById("ghost-n").addEventListener("change", (ev) => {
+  ghost.n = +ev.target.value;
+  try { localStorage.setItem("ghost-n", String(ghost.n)); } catch (e) { /* nada */ }
+  setGhosts();
+});
+
+// Forma de cada una de las últimas n velas cerradas, en fracción de su apertura
+function ghostRows(c, n) {
+  const rows = [];
+  for (let i = Math.max(0, c.t.length - n); i < c.t.length; i++) {
+    const o = c.open[i], h = c.high[i], l = c.low[i], x = c.close[i];
+    if ([o, h, l, x].some((v) => v == null) || !o) continue;
+    rows.push({ dir: Math.sign(x - o), signed: (x - o) / o, body: Math.abs(x - o) / o,
+      up: (h - Math.max(o, x)) / o, lo: (Math.min(o, x) - l) / o });
+  }
+  return rows;
+}
+
+function ghostMean(rows) {
+  const avg = (k) => rows.reduce((a, r) => a + r[k], 0) / rows.length;
+  return { body: avg("body"), up: avg("up"), lo: avg("lo") };
+}
+
+// Direcciones de las 3 velas y tamaño promedio según el modo
+function ghostPlan(mode, rows, liveDir) {
+  const all = ghostMean(rows), lastDir = rows[rows.length - 1].dir || 1;
+  if (mode === "a") {
+    const ups = rows.filter((r) => r.dir > 0).length, downs = rows.filter((r) => r.dir < 0).length;
+    const d = ups > downs ? 1 : downs > ups ? -1 : lastDir;
+    return { dirs: Array(GHOST_BARS).fill(d), size: all };
+  }
+  if (mode === "b") {
+    const d = rows.reduce((a, r) => a + r.signed, 0) >= 0 ? 1 : -1;
+    const same = rows.filter((r) => r.dir === d);
+    return { dirs: Array(GHOST_BARS).fill(d), size: same.length ? ghostMean(same) : all };
+  }
+  const d0 = -(liveDir || lastDir);
+  return { dirs: Array.from({ length: GHOST_BARS }, (_, j) => (j % 2 ? -d0 : d0)), size: all };
+}
+
+function setGhosts() {
+  const c = current.data.candles;
+  ghost.info = {};
+  if (!S.ghost_a) return;
+  const rows = c && c.t.length ? ghostRows(c, ghost.n) : [];
+  // Se dibujan después de la vela en curso (la del WebSocket) o, sin conexión, de la última cerrada
+  const t0 = c && c.t.length ? c.t[c.t.length - 1] : null;
+  const b = live.bar && t0 != null && live.bar.time >= t0 ? live.bar : null;
+  const base = b ? b.time : t0, price = b ? b.close : c && c.close[c.close.length - 1];
+  const liveDir = b ? Math.sign(b.close - b.open) : 0;
+  for (const m of Object.keys(GHOST_COLORS)) {
+    if (!ghost.modes.has(m) || !rows.length || price == null) { S["ghost_" + m].setData([]); continue; }
+    const { dirs, size } = ghostPlan(m, rows, liveDir);
+    const bars = [];
+    let open = price;
+    dirs.forEach((d, j) => {
+      const close = open * (1 + d * size.body);
+      bars.push({ time: base + TF_S[current.tf] * (j + 1), open, close,
+        high: Math.max(open, close) + size.up * open, low: Math.min(open, close) - size.lo * open });
+      open = close;
+    });
+    S["ghost_" + m].setData(bars);
+    ghost.info[m] = { dirs, size, price, end: open, n: rows.length };
+  }
+  renderLabels();
+}
+
+function ghostLabel() {
+  const ms = Object.keys(ghost.info);
+  if (!ms.length) return "";
+  const pct = (x) => nf(2).format(x * 100) + " %";
+  const chg = (x) => `<span class="${x >= 0 ? "pos" : "neg"}">${x >= 0 ? "+" : "−"}${nf(1).format(Math.abs(x * 100))} %</span>`;
+  return ms.map((m) => {
+      const g = ghost.info[m];
+      return `<br><span class="gsw" style="--g:${GHOST_COLORS[m]}"></span>Velas posibles ${m} ${GHOST_NAMES[m]} `
+        + `${g.dirs.map((d) => (d > 0 ? "▲" : "▼")).join("")} cuerpo <b>${pct(g.size.body)}</b>`
+        + ` <span class="muted">sombras ↑${pct(g.size.up)} ↓${pct(g.size.lo)}</span>`
+        + ` → <b>${fmtPrice(g.end)}</b> (${chg(g.end / g.price - 1)})`
+        + ` <span class="muted">promedio de ${g.n} velas</span>`;
+    }).join("");
 }
 
 // Un instante ISO llevado a la vela del timeframe que lo contiene
@@ -2345,6 +2473,7 @@ function applyLiveBar() {
   S.candles.update({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close });
   S.volume.update({ time: b.time, value: b.volume });
   setProjection();
+  setGhosts();
 }
 
 document.querySelectorAll(".seg button").forEach((b) => b.addEventListener("click", () => selectTf(b.dataset.tf)));
