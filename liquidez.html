@@ -138,7 +138,11 @@
       <div class="seg" id="scale">
         <button data-s="log" title="Se ven también los tramos chicos">Log</button><button data-s="lin" title="Solo resaltan los tramos grandes">Lineal</button>
       </div></div>
-    <label class="group" title="Más intensidad = los tramos medianos se ven más brillantes"><span class="lbl">Intensidad</span>
+    <div class="group" id="span-group" title="Cuántas veces menos que el máximo a la vista cubren los colores. Menos rango = más diferencia entre los cúmulos grandes; más rango = se ven también los chicos"><span class="lbl">Rango</span>
+      <div class="seg" id="span">
+        <button data-s="1">×10</button><button data-s="1.5">×30</button><button data-s="2">×100</button><button data-s="3">×1.000</button>
+      </div></div>
+    <label class="group" title="Más intensidad = los tramos medianos se ven más brillantes (el máximo sigue siendo el único con el color del máximo)"><span class="lbl">Intensidad</span>
       <input type="range" id="gain" min="0.3" max="3" step="0.05" value="1"></label>
     <label class="toggle"><input type="checkbox" id="t-price" checked> <span id="t-price-lbl"></span></label>
     <label class="toggle"><input type="checkbox" id="t-bubbles" checked> <span id="t-bubbles-lbl"></span></label>
@@ -152,8 +156,8 @@
     <div class="err" id="err" hidden></div>
   </div>
   <div class="scale">
-    <span>menos</span><canvas id="scale-bar" width="220" height="10"></canvas><span id="scale-lbl"></span>
-    <span id="scale-max"></span>
+    <span id="scale-min">menos</span><canvas id="scale-bar" width="220" height="10"></canvas><span id="scale-max"></span>
+    <span id="scale-lbl"></span>
     <span class="spacer"></span>
     <span><span class="sw" style="background:var(--liq-long)"></span><span id="b0-lbl"></span></span>
     <span><span class="sw" style="background:var(--liq-short)"></span><span id="b1-lbl"></span></span>
@@ -237,12 +241,12 @@ for (let i = 0; i < 256; i++) {
 
 const M = { top: 8, right: 74, bottom: 26, left: 8, profile: 120 };
 const st = {
-  mode: "liq", src: null, cache: {}, liq: null, sum: null, layersOn: {}, side: "both", scale: "log", gain: 1,
+  mode: "liq", src: null, cache: {}, liq: null, sum: null, layersOn: {}, side: "both", scale: "log", span: "1.5", gain: 1,
   view: null, imgKey: "", hover: null, max: 1, show: { price: true, bubbles: true, swing: true, profile: true },
 };
 try {
   const saved = JSON.parse(localStorage.getItem("liqmap") || "{}");
-  for (const k of ["side", "scale", "gain", "mode"]) if (saved[k] != null) st[k] = saved[k];
+  for (const k of ["side", "scale", "span", "gain", "mode"]) if (saved[k] != null) st[k] = saved[k];
   if (saved.show) Object.assign(st.show, saved.show);
 } catch (e) { /* sin storage */ }
 if (location.hash === "#libro") st.mode = "book";
@@ -250,8 +254,9 @@ if (location.hash === "#liquidaciones") st.mode = "liq";
 if (location.hash === "#historia") st.mode = "hist";
 if (!MODES[st.mode]) st.mode = "liq";
 if (!["both", "below", "above"].includes(st.side)) st.side = "both";
+if (!["1", "1.5", "2", "3"].includes(st.span)) st.span = "1.5";
 const save = () => {
-  try { localStorage.setItem("liqmap", JSON.stringify({ side: st.side, scale: st.scale, gain: st.gain, mode: st.mode, show: st.show })); } catch (e) { /* nada */ }
+  try { localStorage.setItem("liqmap", JSON.stringify({ side: st.side, scale: st.scale, span: st.span, gain: st.gain, mode: st.mode, show: st.show })); } catch (e) { /* nada */ }
 };
 
 const canvas = el("heat"), ctx = canvas.getContext("2d");
@@ -414,7 +419,7 @@ function buildImage() {
   const s = st.src, v = st.view, rows = s.rows;
   const cA = Math.max(0, Math.floor(v.c0)), cB = Math.min(s.cols, Math.ceil(v.c1));
   const rA = Math.max(0, Math.floor(s.R(v.p0))), rB = Math.min(rows, Math.ceil(s.R(v.p1)));
-  const key = [s.mode, s.generated, cA, cB, rA, rB, st.side, st.scale, st.gain, st.layersOn[st.mode].join()].join("|");
+  const key = [s.mode, s.generated, cA, cB, rA, rB, st.side, st.scale, st.span, st.gain, st.layersOn[st.mode].join()].join("|");
   if (key === st.imgKey) return;
   st.imgKey = key;
   let max = 0;
@@ -422,15 +427,17 @@ function buildImage() {
   st.max = max || 1;
   off.width = s.cols; off.height = rows;
   const img = offCtx.createImageData(s.cols, rows), px = img.data;
-  const lmax = Math.log10(st.max), span = 1.8;  // la escala log cubre ~2 órdenes de magnitud debajo del máximo
+  const lmax = Math.log10(st.max), span = +st.span;  // la escala log cubre `span` órdenes de magnitud debajo del máximo
   for (let c = 0; c < s.cols; c++) {
     for (let r = 0; r < rows; r++) {
       const x = cell(c, r);
       let u = 0;
       if (x > 0 && keepSide(c, r)) {
         u = st.scale === "log" ? (Math.log10(x) - (lmax - span)) / span : x / st.max;
-        u = Math.min(1, Math.max(0, u * st.gain));
+        u = Math.min(1, Math.max(0, u));
         if (st.scale === "lin") u = Math.sqrt(u);  // que lo mediano no desaparezca del todo
+        // la intensidad curva la escala sin recortarla: así el tope no se satura y los cúmulos grandes se distinguen
+        u = u ** (1 / st.gain);
       }
       const k = Math.round(u * 255) * 4, o = ((rows - 1 - r) * s.cols + c) * 4;
       px[o] = LUT[k]; px[o + 1] = LUT[k + 1]; px[o + 2] = LUT[k + 2]; px[o + 3] = 255;
@@ -629,9 +636,11 @@ function drawScale() {
     for (let y = 0; y < 10; y++) img.data.set(LUT.subarray(k, k + 4), (y * 220 + x) * 4);
   }
   g.putImageData(img, 0, 0);
-  el("scale-max").textContent = `· máximo en lo visible ${fmtUsd(st.max || 0)} por tramo de `
+  el("scale-min").textContent = st.scale === "log" ? `≤ ${fmtUsd((st.max || 0) / 10 ** +st.span)}` : "0";
+  el("span-group").hidden = st.scale !== "log";
+  el("scale-max").textContent = `${fmtUsd(st.max || 0)} (máximo a la vista, por tramo de `
     + (st.src.ratio ? `${nf(1).format((st.src.ratio - 1) * 100)} %` : `US$ ${nf(0).format(st.src.bin)}`)
-    + (st.scale === "log" ? " (escala log)" : "");
+    + (st.scale === "log" ? ", escala log)" : ")");
 }
 
 // ---- resumen de ahora ----
@@ -803,7 +812,7 @@ el("layers").onclick = (ev) => {
   b.setAttribute("aria-pressed", on[i]);
   recompute(); requestDraw();
 };
-for (const [id, key] of [["side", "side"], ["scale", "scale"]]) {
+for (const [id, key] of [["side", "side"], ["scale", "scale"], ["span", "span"]]) {
   const box = el(id);
   box.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.s === st[key]));
   box.onclick = (ev) => {
