@@ -135,6 +135,10 @@ systemctl --user disable --now cripto-dashboard  # desinstalar
   **d** según el MACD 12/26/9 del timeframe a la vista (línea MACD vs 0 = tendencia; histograma a favor/en contra y
   creciendo/achicándose = impulso TTT, pierde fuerza TT−T, corrección −T−TT, corrección terminando −TTT).
   No predicen: muestran el tamaño típico de las próximas velas. Se calcula en el navegador.
+  *Probar en la historia*: se elige una vela del pasado (click, ◀ ▶ o flechas) y las velas posibles se calculan solo
+  con lo anterior, dibujadas sobre las 3 reales; una tabla mide cada modo, cada fase del MACD y cada N con todas las
+  velas del tramo a la vista (o todas las cargadas): acierto por vela, 3 de 3 y mediana del error del cierre, contra
+  "siempre ▲" y "precio quieto". Medido en 1h/4h/1d (oct. 2026): 47–51 % por vela y 9–14 % las tres, como al azar.
 - *Mapa de liquidez* (interruptor arriba, se recuerda en el navegador), sobre el panel de precio:
   barras horizontales con las liquidaciones **estimadas** por tramo de 0,5% hasta ±15% del precio (rojo = largos,
   azul = cortos, con el monto en los 3 tramos mayores de cada lado), líneas punteadas en los máximos y mínimos sin

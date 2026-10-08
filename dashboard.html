@@ -201,6 +201,21 @@
   .ghost-ctl label { display: inline-flex; align-items: center; gap: 3px; cursor: pointer; }
   .gsw { display: inline-block; width: 6px; height: 11px; background: var(--g); border: 1px solid var(--g);
          box-shadow: 8px 0 0 -1px #000, 8px 0 0 0 var(--g); margin-right: 8px; vertical-align: middle; }
+  .ghost-ctl button, .ghost-test button { font: inherit; font-size: 12px; color: var(--text-secondary); cursor: pointer;
+         background: var(--surface-1); border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; }
+  .ghost-ctl button[aria-pressed="true"] { color: var(--surface-1); background: var(--text-primary); border-color: var(--text-primary); }
+  /* prueba de las velas posibles en la historia */
+  .ghost-test { padding: 10px 14px; display: grid; gap: 8px; }
+  .ghost-test .head { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 13px; }
+  .ghost-test .note { margin: 0; font-size: 12px; color: var(--text-secondary); max-width: 1000px; }
+  .ghost-test table { width: auto; }
+  .ghost-test th, .ghost-test td { padding: 4px 10px; font-size: 12px; }
+  .ghost-test td[data-n] { cursor: pointer; }
+  .ghost-test td[data-n]:hover { background: var(--surface-2, color-mix(in srgb, var(--text-primary) 6%, transparent)); }
+  .ghost-test td.best { font-weight: 700; box-shadow: inset 0 -2px 0 var(--good); }
+  .ghost-test td.cur { outline: 1px solid var(--text-secondary); outline-offset: -1px; }
+  .ghost-test tr.sub td:first-child { padding-left: 24px; color: var(--text-secondary); }
+  body.ghost-picking #chart { cursor: crosshair; }
 
   .perf { padding: 14px; display: grid; gap: 12px; }
   .perf h2 { font-size: 15px; margin: 0; font-weight: 600; }
@@ -338,7 +353,8 @@
       <label title="Dirección según el MACD 12/26/9 del timeframe que se está viendo: la línea MACD (arriba o abajo de 0) da la tendencia y el histograma si hay impulso o corrección; tamaño: promedio de todas"><input type="checkbox" data-ghost="d"> <span class="gsw" style="--g:#26c6da"></span>d MACD</label>
       <select id="ghost-n" aria-label="Velas promediadas">
         <option value="10">N = 10</option><option value="20">N = 20</option><option value="50">N = 50</option>
-      </select></span>
+      </select>
+      <button type="button" id="gt-btn" aria-pressed="false" title="Elegir una vela del pasado: las velas posibles se calculan solo con lo anterior y se dibujan sobre las 3 velas reales que vinieron después, con la tabla de aciertos de cada modo">Probar en la historia</button></span>
     <label class="toggle" id="strat-toggle-label" hidden><input type="checkbox" id="strat-toggle" checked> Estrategia 4h</label>
     <span class="spacer"></span>
     <button type="button" class="fs-btn" id="fs-btn" aria-pressed="false" title="Pantalla completa (Esc para salir)">⛶ Pantalla completa</button>
@@ -388,6 +404,26 @@
       <tbody id="fresh-body"></tbody>
     </table>
   </details>
+
+  <section class="card ghost-test" id="gt-panel" hidden aria-label="Velas posibles: prueba en la historia">
+    <div class="head">
+      <b>Velas posibles en la historia</b>
+      <span id="gt-anchor" class="muted"></span>
+      <span><button type="button" id="gt-prev" aria-label="Vela anterior" title="Vela anterior (flecha ←)">◀</button>
+        <button type="button" id="gt-next" aria-label="Vela siguiente" title="Vela siguiente (flecha →)">▶</button></span>
+      <label class="toggle">Medir en <select id="gt-range" aria-label="Velas que entran en la tabla">
+        <option value="view">el tramo a la vista</option><option value="all">todas las velas cargadas</option></select></label>
+      <button type="button" id="gt-close">Cerrar</button>
+    </div>
+    <div class="scroll-x"><table id="gt-table"></table></div>
+    <p class="note">Cada vela del tramo se toma como la última cerrada: las velas posibles salen solo de las N anteriores
+      y del MACD hasta ahí, y se comparan con las 3 velas reales que siguieron. <b>velas</b>: dirección acertada vela a
+      vela; <b>3 de 3</b>: las tres en la dirección real (al azar sería 50 % y 12,5 %); <b>error</b>: mediana de la
+      distancia entre el cierre posible y el real al final de las 3 velas, en % del precio. Para comparar: <b>siempre ▲</b>
+      dibuja tres velas alcistas y <b>precio quieto</b> es el error de suponer que no se mueve. Click en una celda para
+      usar ese modo y ese N en el gráfico. Lo que da bien en un tramo elegido mirando el gráfico suele dar peor en otro:
+      probalo también con todas las velas cargadas y en otros timeframes.</p>
+  </section>
 
   <section class="card chart-card" aria-label="Precio y derivados">
     <div id="chart"></div>
@@ -669,11 +705,11 @@ function buildChart() {
     S[k + "Lo"] = chart.addSeries(LWC.LineSeries, { ...quiet, lineWidth: 1, lineStyle: LWC.LineStyle.Dotted }, 0);
   }
   // Velas posibles: una serie por modo, sin línea ni etiqueta de precio para no confundirlas con el precio real
-  for (const [m, color] of Object.entries(GHOST_COLORS)) {
+  for (const m of Object.keys(GHOST_COLORS)) {
     S["ghost_" + m] = chart.addSeries(LWC.CandlestickSeries, { priceFormat: usd, priceLineVisible: false,
-      lastValueVisible: false, upColor: color, downColor: "#000000", borderUpColor: color, borderDownColor: color,
-      wickUpColor: color, wickDownColor: color }, 0);
+      lastValueVisible: false, ...ghostColors(m) }, 0);
   }
+  S.ghostMarks = LWC.createSeriesMarkers(S.candles, []);
   S.stratEma = chart.addSeries(LWC.LineSeries, { ...quiet, lineWidth: 2 }, 0);
   S.stratDon = chart.addSeries(LWC.LineSeries, { ...quiet, lineWidth: 1, lineStyle: LWC.LineStyle.Dotted,
     lineType: LWC.LineType.WithSteps }, 0);
@@ -717,6 +753,8 @@ function buildChart() {
 
   chart.subscribeCrosshairMove((param) => renderLabels(param));
   chart.timeScale().subscribeVisibleLogicalRangeChange(syncXZoom);
+  chart.timeScale().subscribeVisibleLogicalRangeChange(() => gt.on && gt.range === "view" && gtSchedule());
+  chart.subscribeClick(gtPick);
   if (!buildChart.observed) {
     new ResizeObserver(() => requestAnimationFrame(positionLabels)).observe(document.getElementById("chart"));
     buildChart.observed = true;
@@ -902,6 +940,7 @@ function setChartData(data, keepView) {
   setWhales(data.whales);
   setProjection();
   setGhosts();
+  if (gt.on) gtSchedule();
   applyLiveBar();
 
   if (prevRange && !atRightEdge) {
@@ -1126,6 +1165,7 @@ document.querySelectorAll("[data-ghost]").forEach((el) => {
     ghost.modes[el.checked ? "add" : "delete"](el.dataset.ghost);
     try { localStorage.setItem("ghost-modes", [...ghost.modes].sort().join("")); } catch (e) { /* nada */ }
     setGhosts();
+    if (gt.on) gtCalibrate();
   });
 });
 document.getElementById("ghost-n").value = String(ghost.n);
@@ -1133,18 +1173,24 @@ document.getElementById("ghost-n").addEventListener("change", (ev) => {
   ghost.n = +ev.target.value;
   try { localStorage.setItem("ghost-n", String(ghost.n)); } catch (e) { /* nada */ }
   setGhosts();
+  if (gt.on) gtCalibrate();
 });
 
-// Forma de cada una de las últimas n velas cerradas, en fracción de su apertura
-function ghostRows(c, n) {
-  const rows = [];
-  for (let i = Math.max(0, c.t.length - n); i < c.t.length; i++) {
+// Forma de cada vela, en fracción de su apertura (se calcula una vez por juego de datos)
+function ghostShapes(c) {
+  if (c._shapes) return c._shapes;
+  c._shapes = c.t.map((_, i) => {
     const o = c.open[i], h = c.high[i], l = c.low[i], x = c.close[i];
-    if ([o, h, l, x].some((v) => v == null) || !o) continue;
-    rows.push({ dir: Math.sign(x - o), signed: (x - o) / o, body: Math.abs(x - o) / o,
-      up: (h - Math.max(o, x)) / o, lo: (Math.min(o, x) - l) / o });
-  }
-  return rows;
+    if ([o, h, l, x].some((v) => v == null) || !o) return null;
+    return { dir: Math.sign(x - o), signed: (x - o) / o, body: Math.abs(x - o) / o,
+      up: (h - Math.max(o, x)) / o, lo: (Math.min(o, x) - l) / o };
+  });
+  return c._shapes;
+}
+
+// Las n velas cerradas que terminan antes de la posición end (por defecto, las últimas)
+function ghostRows(c, n, end = c.t.length) {
+  return ghostShapes(c).slice(Math.max(0, end - n), end).filter(Boolean);
 }
 
 function ghostMean(rows) {
@@ -1152,27 +1198,27 @@ function ghostMean(rows) {
   return { body: avg("body"), up: avg("up"), lo: avg("lo") };
 }
 
-// Últimos dos valores del MACD del timeframe a la vista (velas que trae el servidor)
-function ghostMacd(c) {
-  let i = c.t.length - 1;
+// Últimos dos valores del MACD antes de la posición end (velas que trae el servidor; la EMA no mira adelante)
+function ghostMacd(c, end = c.t.length) {
+  let i = end - 1;
   while (i > 0 && (c.macd_hist[i] == null || c.macd[i] == null)) i--;
   if (i < 1 || c.macd_hist[i - 1] == null) return null;
   return { macd: c.macd[i], hist: c.macd_hist[i], prev: c.macd_hist[i - 1] };
 }
 
 // Direcciones de las 3 velas y tamaño promedio según el modo
-function ghostPlan(mode, rows, liveDir, c) {
+function ghostPlan(mode, rows, liveDir, c, end) {
   const all = ghostMean(rows), lastDir = rows[rows.length - 1].dir || 1;
   if (mode === "d") {
-    const k = c.macd && c.macd_hist ? ghostMacd(c) : null;
+    const k = c.macd && c.macd_hist ? ghostMacd(c, end) : null;
     if (!k) return null;
     const T = Math.sign(k.macd) || Math.sign(k.hist) || lastDir;
     const favor = Math.sign(k.hist) === T, grows = Math.abs(k.hist) > Math.abs(k.prev);
-    const [pat, note] = favor
+    const [pat, phase] = favor
       ? (grows ? [[1, 1, 1], "impulso"] : [[1, 1, -1], "impulso perdiendo fuerza"])
       : (grows ? [[-1, -1, 1], "corrección"] : [[-1, 1, 1], "corrección terminando"]);
-    return { dirs: pat.map((x) => x * T), size: all,
-      note: `tendencia ${T > 0 ? "alcista" : "bajista"}, ${note}` };
+    return { dirs: pat.map((x) => x * T), size: all, phase,
+      note: `tendencia ${T > 0 ? "alcista" : "bajista"}, ${phase}` };
   }
   if (mode === "a") {
     const ups = rows.filter((r) => r.dir > 0).length, downs = rows.filter((r) => r.dir < 0).length;
@@ -1188,49 +1234,277 @@ function ghostPlan(mode, rows, liveDir, c) {
   return { dirs: Array.from({ length: GHOST_BARS }, (_, j) => (j % 2 ? -d0 : d0)), size: all };
 }
 
+// Precio al cierre de las 3 velas posibles: cada una abre donde cerró la anterior
+function ghostEnd(price, plan) {
+  return plan.dirs.reduce((p, d) => p * (1 + d * plan.size.body), price);
+}
+
 function setGhosts() {
   const c = current.data.candles;
   ghost.info = {};
   if (!S.ghost_a) return;
-  const rows = c && c.t.length ? ghostRows(c, ghost.n) : [];
-  // Se dibujan después de la vela en curso (la del WebSocket) o, sin conexión, de la última cerrada
-  const t0 = c && c.t.length ? c.t[c.t.length - 1] : null;
-  const b = live.bar && t0 != null && live.bar.time >= t0 ? live.bar : null;
-  const base = b ? b.time : t0, price = b ? b.close : c && c.close[c.close.length - 1];
-  const liveDir = b ? Math.sign(b.close - b.open) : 0;
+  let end, base, price, liveDir, k = null;
+  if (gt.on) {
+    // Prueba en la historia: la vela elegida hace de última cerrada y se mira solo lo anterior
+    k = c && c.t.length ? gtIndex(c) : null;
+    end = k == null ? 0 : k + 1;
+    base = k == null ? null : c.t[k];
+    price = k == null ? null : c.close[k];
+    liveDir = 0;
+  } else {
+    // Se dibujan después de la vela en curso (la del WebSocket) o, sin conexión, de la última cerrada
+    const t0 = c && c.t.length ? c.t[c.t.length - 1] : null;
+    const b = live.bar && t0 != null && live.bar.time >= t0 ? live.bar : null;
+    end = c ? c.t.length : 0;
+    base = b ? b.time : t0;
+    price = b ? b.close : c && c.close[c.close.length - 1];
+    liveDir = b ? Math.sign(b.close - b.open) : 0;
+  }
+  const rows = end ? ghostRows(c, ghost.n, end) : [];
   for (const m of Object.keys(GHOST_COLORS)) {
     if (!ghost.modes.has(m) || !rows.length || price == null) { S["ghost_" + m].setData([]); continue; }
-    const plan = ghostPlan(m, rows, liveDir, c);
+    const plan = ghostPlan(m, rows, liveDir, c, end);
     if (!plan) { S["ghost_" + m].setData([]); continue; }
     const { dirs, size, note } = plan;
     const bars = [];
     let open = price;
     dirs.forEach((d, j) => {
       const close = open * (1 + d * size.body);
-      bars.push({ time: base + TF_S[current.tf] * (j + 1), open, close,
+      // En la historia van justo encima de las velas reales (misma grilla que el servidor)
+      const time = k != null && k + j + 1 < c.t.length ? c.t[k + j + 1] : base + TF_S[current.tf] * (j + 1);
+      bars.push({ time, open, close,
         high: Math.max(open, close) + size.up * open, low: Math.min(open, close) - size.lo * open });
       open = close;
     });
     S["ghost_" + m].setData(bars);
     ghost.info[m] = { dirs, size, price, end: open, n: rows.length, note };
+    if (k != null) {
+      const idx = [1, 2, 3].map((j) => k + j).filter((i) => i < c.t.length);
+      const real = idx.map((i) => Math.sign(c.close[i] - c.open[i]));
+      ghost.info[m].real = { dirs: real, hits: real.filter((d, j) => d === dirs[j]).length,
+        end: idx.length ? c.close[idx[idx.length - 1]] : null };
+    }
   }
+  setGhostMarks(c, k, rows.length);
   renderLabels();
+  if (gt.on) renderGtHead(c, k);
 }
 
 function ghostLabel() {
-  const ms = Object.keys(ghost.info);
-  if (!ms.length) return "";
   const pct = (x) => nf(2).format(x * 100) + " %";
   const chg = (x) => `<span class="${x >= 0 ? "pos" : "neg"}">${x >= 0 ? "+" : "−"}${nf(1).format(Math.abs(x * 100))} %</span>`;
+  const arrows = (ds) => ds.map((d) => (d > 0 ? "▲" : d < 0 ? "▼" : "■")).join("");
+  const ms = Object.keys(ghost.info);
+  if (!ms.length) return gt.on ? "<br>Velas posibles: click en una vela del gráfico para probarlas desde ahí" : "";
   return ms.map((m) => {
-      const g = ghost.info[m];
+      const g = ghost.info[m], r = g.real;
       return `<br><span class="gsw" style="--g:${GHOST_COLORS[m]}"></span>Velas posibles ${m} ${GHOST_NAMES[m]} `
-        + `${g.dirs.map((d) => (d > 0 ? "▲" : "▼")).join("")}${g.note ? ` <span class="muted">(${g.note})</span>` : ""} cuerpo <b>${pct(g.size.body)}</b>`
+        + `${arrows(g.dirs)}${g.note ? ` <span class="muted">(${g.note})</span>` : ""} cuerpo <b>${pct(g.size.body)}</b>`
         + ` <span class="muted">sombras ↑${pct(g.size.up)} ↓${pct(g.size.lo)}</span>`
         + ` → <b>${fmtPrice(g.end)}</b> (${chg(g.end / g.price - 1)})`
-        + ` <span class="muted">promedio de ${g.n} velas</span>`;
+        + ` <span class="muted">promedio de ${g.n} velas</span>`
+        + (r ? ` · real ${arrows(r.dirs)} <b>${r.hits} de ${r.dirs.length}</b>`
+          + (r.end != null ? ` → <b>${fmtPrice(r.end)}</b> (${chg(r.end / g.price - 1)})` : "") : "");
     }).join("");
 }
+
+// ---------- velas posibles: prueba en la historia ----------
+// Se elige una vela del pasado (click en el gráfico, ◀ ▶ o las flechas): las velas posibles se calculan con lo
+// anterior y se dibujan semitransparentes sobre las 3 reales. La tabla repite eso con cada vela del tramo.
+const gt = { on: false, t: null, range: "view", timer: 0 };
+const GT_NS = [10, 20, 50];
+const GT_PHASES = ["impulso", "impulso perdiendo fuerza", "corrección", "corrección terminando"];
+
+function ghostColors(m) {
+  const color = GHOST_COLORS[m], a = gt.on ? "b3" : "";
+  return { upColor: color + a, downColor: "#000000" + a, borderUpColor: color, borderDownColor: color,
+    wickUpColor: color, wickDownColor: color };
+}
+
+// La vela elegida en el timeframe a la vista: la que contiene el instante guardado (sirve al cambiar de timeframe)
+function gtIndex(c) {
+  if (gt.t == null) return null;
+  let lo = 0, hi = c.t.length - 1;
+  if (gt.t < c.t[0]) return null;
+  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (c.t[mid] <= gt.t) lo = mid; else hi = mid - 1; }
+  return lo;
+}
+
+function setGhostMarks(c, k, n) {
+  if (!S.ghostMarks) return;
+  if (k == null) { S.ghostMarks.setMarkers([]); return; }
+  const col = theme().primary, from = Math.max(0, k - n + 1);
+  S.ghostMarks.setMarkers([
+    { time: c.t[from], position: "belowBar", shape: "arrowUp", color: col, text: `desde (N = ${n})` },
+    { time: c.t[k], position: "aboveBar", shape: "arrowDown", color: col, text: "vela elegida" },
+  ].filter((x, i, a) => i === 0 || x.time !== a[0].time).sort((x, y) => x.time - y.time));
+}
+
+const fmtUtc = (s) => new Date(s * 1000).toISOString().slice(0, 16).replace("T", " ") + " UTC";
+
+function renderGtHead(c, k) {
+  document.getElementById("gt-anchor").innerHTML = k == null
+    ? "Hacé click en una vela del gráfico: se toma como la última cerrada."
+    : `Vela elegida <b>${fmtUtc(c.t[k])}</b> · cierre ${fmtPrice(c.close[k])}`
+      + (k + GHOST_BARS >= c.t.length ? " · todavía no hay 3 velas después" : "");
+}
+
+function gtSet(on) {
+  gt.on = on;
+  document.getElementById("gt-btn").setAttribute("aria-pressed", String(on));
+  document.getElementById("gt-panel").hidden = !on;
+  document.body.classList.toggle("ghost-picking", on);
+  for (const m of Object.keys(GHOST_COLORS)) S["ghost_" + m] && S["ghost_" + m].applyOptions(ghostColors(m));
+  setGhosts();
+  if (on) gtCalibrate();
+}
+
+function gtPick(param) {
+  if (!gt.on || !param || param.logical == null) return;
+  gtGo(param.time !== undefined && current.tIndex.has(param.time) ? current.tIndex.get(param.time)
+    : Math.round(param.logical));
+}
+
+function gtGo(i) {
+  const c = current.data.candles;
+  if (!c || !c.t.length) return;
+  gt.t = c.t[Math.max(0, Math.min(c.t.length - 1, i))];
+  setGhosts();
+}
+
+// ◀ ▶: sin vela elegida arranca en la última que ya tiene 3 velas después
+const gtMove = (step) => {
+  const c = current.data.candles;
+  if (c && c.t.length) gtGo((gtIndex(c) ?? c.t.length - 1 - GHOST_BARS) + step);
+};
+
+function gtSchedule() {
+  clearTimeout(gt.timer);
+  gt.timer = setTimeout(gtCalibrate, 250);
+}
+
+// Cada vela del tramo como si fuera la última cerrada, con todos los modos y los tres N
+function gtCalibrate() {
+  const c = current.data.candles, table = document.getElementById("gt-table");
+  if (!gt.on || !c || !c.t.length) { table.innerHTML = ""; return; }
+  // Desde la vela 50 para que todos los N midan las mismas velas
+  let lo = Math.max(...GT_NS) - 1, hi = c.t.length - 1 - GHOST_BARS;
+  if (gt.range === "view") {
+    const r = chart.timeScale().getVisibleLogicalRange();
+    if (r) { lo = Math.max(lo, Math.ceil(r.from)); hi = Math.min(hi, Math.floor(r.to) - GHOST_BARS); }
+  }
+  const acc = {};
+  const add = (key, n, dirs, pred, real, base, realEnd) => {
+    const a = acc[key + "|" + n] || (acc[key + "|" + n] = { cases: 0, hit: 0, tot: 0, all: 0, err: [] });
+    a.cases++;
+    if (dirs) {
+      let h = 0;
+      real.forEach((d, j) => { if (d) { a.tot++; if (d === dirs[j]) { a.hit++; h++; } } });
+      if (h === GHOST_BARS) a.all++;
+    }
+    a.err.push(Math.abs(pred - realEnd) / base);
+  };
+  let cases = 0;
+  for (let k = lo; k <= hi; k++) {
+    const base = c.close[k], realEnd = c.close[k + GHOST_BARS];
+    if (base == null || realEnd == null) continue;
+    const real = [1, 2, 3].map((j) => Math.sign(c.close[k + j] - c.open[k + j]));
+    if (real.some(Number.isNaN)) continue;
+    cases++;
+    for (const n of GT_NS) {
+      const rows = ghostRows(c, n, k + 1);
+      if (!rows.length) continue;
+      for (const m of Object.keys(GHOST_COLORS)) {
+        const plan = ghostPlan(m, rows, 0, c, k + 1);
+        if (!plan) continue;
+        const pred = ghostEnd(base, plan);
+        add(m, n, plan.dirs, pred, real, base, realEnd);
+        if (plan.phase) add("d:" + plan.phase, n, plan.dirs, pred, real, base, realEnd);
+      }
+      const upPlan = { dirs: [1, 1, 1], size: ghostMean(rows) };
+      add("up", n, upPlan.dirs, ghostEnd(base, upPlan), real, base, realEnd);
+      add("flat", n, null, base, real, base, realEnd);
+    }
+  }
+  if (!cases) {
+    table.innerHTML = `<tbody><tr><td class="muted">No hay velas para medir en este tramo: alejá el gráfico`
+      + ` (hacen falta 50 velas antes y 3 después de cada una).</td></tr></tbody>`;
+    return;
+  }
+
+  const median = (xs) => { const s = [...xs].sort((x, y) => x - y), h = s.length >> 1;
+    return s.length % 2 ? s[h] : (s[h - 1] + s[h]) / 2; };
+  const stat = (key, n) => {
+    const a = acc[key + "|" + n];
+    if (!a) return null;
+    return { cases: a.cases, bars: a.tot ? a.hit / a.tot : null, all: a.all / a.cases, err: median(a.err) };
+  };
+  const p0 = (x) => x == null ? "–" : nf(0).format(x * 100) + " %";
+  const p2 = (x) => x == null ? "–" : nf(2).format(x * 100) + " %";
+  // Lo mejor de cada columna entre los 4 modos (mayor acierto, menor error)
+  const best = {};
+  for (const n of GT_NS) for (const [f, sign] of [["bars", 1], ["all", 1], ["err", -1]]) {
+    const vals = Object.keys(GHOST_COLORS).map((m) => stat(m, n)).filter(Boolean).map((s) => s[f] * sign);
+    best[f + n] = vals.length ? Math.max(...vals) * sign : null;
+  }
+  const row = (label, key, mode, sub) => {
+    const s0 = GT_NS.map((n) => stat(key, n)).find(Boolean);
+    if (!s0) return "";
+    const cells = GT_NS.map((n) => {
+      const s = stat(key, n);
+      if (!s) return "<td></td><td></td><td></td>";
+      const cls = (f) => {
+        const c = [];
+        if (mode && !sub && s[f] != null && s[f] === best[f + n]) c.push("best");
+        if (mode && ghost.modes.has(mode) && ghost.n === n) c.push("cur");
+        return c.length ? ` ${c.join(" ")}` : "";
+      };
+      const attr = mode ? ` data-mode="${mode}" data-n="${n}" title="Usar ${mode} con N = ${n}"` : "";
+      return key === "flat" ? `<td class="num"></td><td class="num"></td><td class="num"${attr}>${p2(s.err)}</td>`
+        : `<td class="num${cls("bars")}"${attr}>${p0(s.bars)}</td><td class="num${cls("all")}"${attr}>${p0(s.all)}</td>`
+          + `<td class="num${cls("err")}"${attr}>${p2(s.err)}</td>`;
+    }).join("");
+    return `<tr${sub ? ' class="sub"' : ""}><td>${label}</td><td class="num">${nf(0).format(s0.cases)}</td>${cells}</tr>`;
+  };
+  const first = c.t[lo], last = c.t[hi];
+  table.innerHTML = `<caption class="muted" style="text-align:left;padding:4px 0">${nf(0).format(cases)} velas de `
+    + `${fmtUtc(first)} a ${fmtUtc(last)} (${current.tf})</caption>`
+    + `<thead><tr><th rowspan="2">Modo</th><th rowspan="2" class="num">Casos</th>`
+    + GT_NS.map((n) => `<th colspan="3" style="text-align:center">N = ${n}</th>`).join("") + "</tr><tr>"
+    + GT_NS.map(() => '<th class="num">velas</th><th class="num">3 de 3</th><th class="num">error</th>').join("")
+    + "</tr></thead><tbody>"
+    + Object.keys(GHOST_COLORS).map((m) => row(`<span class="gsw" style="--g:${GHOST_COLORS[m]}"></span>${m} ${GHOST_NAMES[m]}`, m, m)
+      + (m === "d" ? GT_PHASES.map((ph) => row(ph, "d:" + ph, "d", true)).join("") : "")).join("")
+    + row("siempre ▲", "up") + row("precio quieto", "flat")
+    + "</tbody>";
+}
+
+document.getElementById("gt-btn").addEventListener("click", () => gtSet(!gt.on));
+document.getElementById("gt-close").addEventListener("click", () => gtSet(false));
+document.getElementById("gt-prev").addEventListener("click", () => gtMove(-1));
+document.getElementById("gt-next").addEventListener("click", () => gtMove(1));
+document.getElementById("gt-range").addEventListener("change", (ev) => { gt.range = ev.target.value; gtCalibrate(); });
+document.getElementById("gt-table").addEventListener("click", (ev) => {
+  const td = ev.target.closest("td[data-n]");
+  if (!td) return;
+  ghost.modes.add(td.dataset.mode);
+  ghost.n = +td.dataset.n;
+  document.querySelectorAll("[data-ghost]").forEach((el) => { el.checked = ghost.modes.has(el.dataset.ghost); });
+  document.getElementById("ghost-n").value = String(ghost.n);
+  try {
+    localStorage.setItem("ghost-modes", [...ghost.modes].sort().join(""));
+    localStorage.setItem("ghost-n", String(ghost.n));
+  } catch (e) { /* nada */ }
+  setGhosts();
+  gtCalibrate();
+});
+document.addEventListener("keydown", (ev) => {
+  if (!gt.on || ev.altKey || ev.ctrlKey || ev.metaKey || ev.target.closest("input, select, textarea")) return;
+  if (ev.key === "ArrowLeft" || ev.key === "ArrowRight") {
+    ev.preventDefault();
+    gtMove(ev.key === "ArrowLeft" ? -1 : 1);
+  }
+});
 
 // Un instante ISO llevado a la vela del timeframe que lo contiene
 function barTime(iso, tf) {
