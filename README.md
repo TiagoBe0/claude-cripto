@@ -133,7 +133,9 @@ systemctl --user disable --now cripto-dashboard  # desinstalar
   apertura); cada una abre donde cerró la anterior. Dirección: **a** la de la mayoría de las N velas; **b** el signo
   de la suma de los cuerpos, con el tamaño de las velas de ese lado; **c** alterna empezando contra la vela en curso;
   **d** según el MACD (5/13/5 por defecto) del timeframe a la vista (línea MACD vs 0 = tendencia; histograma a favor/en contra y
-  creciendo/achicándose = impulso TTT, pierde fuerza TT−T, corrección −T−TT, corrección terminando −TTT).
+  creciendo/achicándose = impulso TTT, pierde fuerza TT−T, corrección −T−TT, corrección terminando −TTT); **e** igual
+  que d pero pierde fuerza = T−T−T (dibuja la vuelta antes: ~1 vela después del giro contra ~2,5, con el doble de
+  cambios de lado y los mismos aciertos).
   No predicen: muestran el tamaño típico de las próximas velas. Se calcula en el navegador.
   *Probar en la historia*: se elige una vela del pasado (click, ◀ ▶ o flechas) y las velas posibles se calculan solo
   con lo anterior, dibujadas sobre las 3 reales; una tabla mide cada modo, cada fase del MACD y cada N con todas las

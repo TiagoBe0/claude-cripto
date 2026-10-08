@@ -351,6 +351,7 @@
       <label title="Dirección: el signo de la suma de los cuerpos (momentum neto); tamaño: promedio solo de las velas de esa dirección"><input type="checkbox" data-ghost="b"> <span class="gsw" style="--g:#ff8a00"></span>b momentum</label>
       <label title="Sin dirección: alterna empezando contra la vela en curso (si sube: baja/sube/baja; si baja: sube/baja/sube); tamaño: promedio de todas"><input type="checkbox" data-ghost="c"> <span class="gsw" style="--g:#a8c400"></span>c neutral</label>
       <label title="Dirección según el MACD del timeframe que se está viendo (con la vela en curso): la línea MACD (arriba o abajo de 0) da la tendencia y el histograma si hay impulso o corrección; tamaño: promedio de todas"><input type="checkbox" data-ghost="d"> <span class="gsw" style="--g:#26c6da"></span>d MACD</label>
+      <label title="Como d, pero cuando el impulso pierde fuerza ya dibuja la vuelta: T −T −T en vez de T T −T. Se entera antes de los giros, pero cambia de lado el doble de veces"><input type="checkbox" data-ghost="e"> <span class="gsw" style="--g:#c77dff"></span>e MACD anticipado</label>
       <select id="ghost-macd" aria-label="Parámetros del MACD" title="Parámetros del MACD (rápida/lenta/señal) para el modo d y el panel del MACD. Más cortos = se entera antes de un giro, pero también cambia de idea más seguido"></select>
       <select id="ghost-n" aria-label="Velas promediadas">
         <option value="10">N = 10</option><option value="20">N = 20</option><option value="50">N = 50</option>
@@ -1153,9 +1154,10 @@ function projLabel() {
 //                 a favor de T pero achicándose         → impulso perdiendo fuerza: T T −T
 //                 en contra de T y creciendo            → corrección:             −T −T T
 //                 en contra de T pero achicándose       → corrección terminando:  −T T T
+//   e MACD anticipado: igual que d, pero el impulso perdiendo fuerza ya dibuja la vuelta: T −T −T.
 // No predicen el precio: muestran cómo se vería el siguiente tramo con velas de tamaño típico.
-const GHOST_COLORS = { a: "#f2c200", b: "#ff8a00", c: "#a8c400", d: "#26c6da" };
-const GHOST_NAMES = { a: "mayoría", b: "momentum", c: "neutral", d: "MACD" };
+const GHOST_COLORS = { a: "#f2c200", b: "#ff8a00", c: "#a8c400", d: "#26c6da", e: "#c77dff" };
+const GHOST_NAMES = { a: "mayoría", b: "momentum", c: "neutral", d: "MACD", e: "MACD anticipado" };
 const GHOST_BARS = 3;
 // Parámetros del MACD (rápida/lenta/señal): el clásico y otros más rápidos que se usan en cripto
 // Por defecto 5/13/5: en la historia se entera de un giro en ~3 velas contra ~4,7 del 12/26/9 (mismos aciertos)
@@ -1262,13 +1264,13 @@ function ghostMacd(mc, end) {
 // Direcciones de las 3 velas y tamaño promedio según el modo; mc = MACD y mEnd = hasta dónde mirarlo
 function ghostPlan(mode, rows, liveDir, mc, mEnd) {
   const all = ghostMean(rows), lastDir = rows[rows.length - 1].dir || 1;
-  if (mode === "d") {
+  if (mode === "d" || mode === "e") {
     const k = mc ? ghostMacd(mc, mEnd) : null;
     if (!k) return null;
     const T = Math.sign(k.macd) || Math.sign(k.hist) || lastDir;
     const favor = Math.sign(k.hist) === T, grows = Math.abs(k.hist) > Math.abs(k.prev);
     const [pat, phase] = favor
-      ? (grows ? [[1, 1, 1], "impulso"] : [[1, 1, -1], "impulso perdiendo fuerza"])
+      ? (grows ? [[1, 1, 1], "impulso"] : [mode === "e" ? [1, -1, -1] : [1, 1, -1], "impulso perdiendo fuerza"])
       : (grows ? [[-1, -1, 1], "corrección"] : [[-1, 1, 1], "corrección terminando"]);
     return { dirs: pat.map((x) => x * T), size: all, phase,
       note: `tendencia ${T > 0 ? "alcista" : "bajista"}, ${phase}` };
@@ -1315,7 +1317,7 @@ function setGhosts() {
     price = b ? b.close : c && c.close[c.close.length - 1];
     liveDir = b ? Math.sign(b.close - b.open) : 0;
     // El MACD del modo d incluye la vela en curso (cambia hasta que cierra, como en cualquier gráfico)
-    if (c && ghost.modes.has("d")) {
+    if (c && (ghost.modes.has("d") || ghost.modes.has("e"))) {
       const closes = c.close.slice();
       if (b) b.time === t0 ? (closes[closes.length - 1] = b.close) : closes.push(b.close);
       mc = macdCalc(closes, ghost.macd);
@@ -1339,7 +1341,7 @@ function setGhosts() {
       open = close;
     });
     S["ghost_" + m].setData(bars);
-    ghost.info[m] = { dirs, size, price, end: open, n: rows.length, note: m === "d" ? `${ghost.macd}, ${note}` : note };
+    ghost.info[m] = { dirs, size, price, end: open, n: rows.length, note: plan.phase ? `${ghost.macd}, ${note}` : note };
     if (k != null) {
       const idx = [1, 2, 3].map((j) => k + j).filter((i) => i < c.t.length);
       const real = idx.map((i) => Math.sign(c.close[i] - c.open[i]));
@@ -1482,7 +1484,7 @@ function gtCalibrate() {
         if (!plan) continue;
         const pred = ghostEnd(base, plan);
         add(m, n, plan.dirs, pred, real, base, realEnd);
-        if (plan.phase) add("d:" + plan.phase, n, plan.dirs, pred, real, base, realEnd);
+        if (m === "d" || (m === "e" && plan.phase === GT_PHASES[1])) add(m + ":" + plan.phase, n, plan.dirs, pred, real, base, realEnd);
       }
       const upPlan = { dirs: [1, 1, 1], size: ghostMean(rows) };
       add("up", n, upPlan.dirs, ghostEnd(base, upPlan), real, base, realEnd);
@@ -1538,7 +1540,8 @@ function gtCalibrate() {
     + GT_NS.map(() => '<th class="num">velas</th><th class="num">3 de 3</th><th class="num">error</th>').join("")
     + "</tr></thead><tbody>"
     + Object.keys(GHOST_COLORS).map((m) => row(`<span class="gsw" style="--g:${GHOST_COLORS[m]}"></span>${m} ${GHOST_NAMES[m]}`, m, m)
-      + (m === "d" ? GT_PHASES.map((ph) => row(ph, "d:" + ph, "d", true)).join("") : "")).join("")
+      + (m === "d" ? GT_PHASES.map((ph) => row(ph, "d:" + ph, "d", true)).join("") : "")
+      + (m === "e" ? row(GT_PHASES[1] + " ▲▼▼", "e:" + GT_PHASES[1], "e", true) : "")).join("")
     + row("siempre ▲", "up") + row("precio quieto", "flat")
     + "</tbody>";
   gtMacdTable(c, lo, hi, median, p0, p2);
