@@ -285,10 +285,39 @@
   .dot.warning { background: var(--warning); }
   .error { color: var(--down); padding: 12px 14px; }
 
+  .verdicts-card { padding: 6px 8px; }
+  /* Opciones del gráfico: en la compu siempre a la vista; en el celular plegadas detrás de un botón */
+  .tb-more { display: contents; }
+  .opts-btn { display: none; }
+  /* Leyenda completa del precio debajo del gráfico (solo celular: arriba de las velas las taparía) */
+  .chart-legend { display: none; }
+
   @media (max-width: 640px) {
-    main { padding: 16px; }
+    main { padding: 8px 8px 16px; gap: 6px; }
+    .hero { padding: 6px 10px; }
     .hero .price { font-size: 24px; }
-    .pane-label { white-space: normal; max-width: calc(100% - 80px); font-size: 11px; }
+    .chg { font-size: 13px; margin-left: 6px; }
+    .seg { display: flex; width: 100%; }
+    .seg button { flex: 1; padding: 6px 0; }
+    .opts-btn { display: inline-block; }
+    .tb-more { order: 1; }  /* desplegadas, debajo de los botones Opciones y Pantalla completa */
+    .tb-more, #pane-chips, #overlay-chips { display: none; }
+    body.opts-open .tb-more { display: flex; flex-wrap: wrap; gap: 8px 14px; width: 100%; }
+    body.opts-open #pane-chips, body.opts-open #overlay-chips { display: flex; }
+    .tb-more .spacer { display: none; }
+    .ghost-ctl { flex-wrap: wrap; gap: 6px; }
+    /* Etiquetas de los paneles: un solo renglón corto y transparente, el detalle va abajo del gráfico */
+    .pane-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: calc(100% - 72px);
+      font-size: 10px; padding: 1px 4px; left: 4px; background: color-mix(in srgb, var(--surface-1) 60%, transparent); }
+    .pane-label .muted { display: none; }
+    .pane-label .sw { width: 10px; margin: 0 3px 0 5px; }
+    .liq-legend { display: none !important; }
+    .chart-card { border-radius: 6px; }
+    .xzoom { left: 6px; right: 6px; }
+    .chart-legend { display: block; padding: 6px 10px; font-size: 12px; line-height: 1.6; color: var(--text-secondary); }
+    .chart-legend b { color: var(--text-primary); font-weight: 600; }
+    .chart-legend .box { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: middle; margin: 0 4px 0 8px; opacity: .6; }
+    .chart-legend .box.ov { margin-left: 0; opacity: 1; }
     th, td { padding: 6px 8px; }
   }
 </style>
@@ -301,6 +330,87 @@
       <div style="margin-top:2px"><span class="price" id="price">–</span><span class="chg" id="chg"></span></div>
       <div class="meta" id="day-meta"></div>
     </div>
+  </section>
+
+  <div class="toolbar">
+    <div class="seg" role="group" aria-label="Timeframe">
+      <button data-tf="1h" aria-pressed="true">1h</button>
+      <button data-tf="2h" aria-pressed="false">2h</button>
+      <button data-tf="3h" aria-pressed="false" title="Binance no tiene velas de 3 h: se arman con las de 1 h">3h</button>
+      <button data-tf="4h" aria-pressed="false">4h</button>
+      <button data-tf="5h" aria-pressed="false" title="Binance no tiene velas de 5 h: se arman con las de 1 h (grilla fija desde 1970, no arranca a las 00 cada día)">5h</button>
+      <button data-tf="1d" aria-pressed="false">1d</button>
+      <button data-tf="1w" aria-pressed="false" title="Semanas de lunes a domingo (UTC), como Binance">1w</button>
+    </div>
+    <button type="button" class="fs-btn opts-btn" id="opts-btn" aria-expanded="false" aria-controls="tb-more">⚙ Opciones</button>
+    <div class="tb-more" id="tb-more">
+    <label class="toggle"><input type="checkbox" id="vp-toggle" checked> Perfil de volumen
+      <select id="vp-source" aria-label="Volumen del perfil">
+        <option value="both">spot + perp</option><option value="spot">spot</option><option value="perp">perp</option>
+      </select></label>
+    <label class="toggle"><input type="checkbox" id="liq-toggle" checked> Mapa de liquidez</label>
+    <label class="toggle" title="SMA 50 y 200 hacia adelante: la parte de la ventana que ya pasó es exacta; el resto supone el precio quieto (línea) o moviéndose ±1 desvío típico (rango)"><input type="checkbox" id="proj-toggle" checked> Proyectar medias
+      <select id="proj-bars" aria-label="Velas a proyectar">
+        <option value="10">10 velas</option><option value="20">20 velas</option><option value="50">50 velas</option>
+      </select></label>
+    <span class="toggle ghost-ctl" title="3 velas hipotéticas después de la vela en curso, con el cuerpo y las sombras promedio de las últimas N velas cerradas. No predicen: muestran el tamaño típico de una vela">Velas posibles
+      <label title="Dirección: la de la mayoría de las últimas N velas; tamaño: promedio de todas"><input type="checkbox" data-ghost="a"> <span class="gsw" style="--g:#f2c200"></span>a mayoría</label>
+      <label title="Dirección: el signo de la suma de los cuerpos (momentum neto); tamaño: promedio solo de las velas de esa dirección"><input type="checkbox" data-ghost="b"> <span class="gsw" style="--g:#ff8a00"></span>b momentum</label>
+      <label title="Sin dirección: alterna empezando contra la vela en curso (si sube: baja/sube/baja; si baja: sube/baja/sube); tamaño: promedio de todas"><input type="checkbox" data-ghost="c"> <span class="gsw" style="--g:#a8c400"></span>c neutral</label>
+      <label title="Dirección según el MACD del timeframe que se está viendo (con la vela en curso): la línea MACD (arriba o abajo de 0) da la tendencia y el histograma si hay impulso o corrección; tamaño: promedio de todas"><input type="checkbox" data-ghost="d"> <span class="gsw" style="--g:#26c6da"></span>d MACD</label>
+      <label title="Como d, pero cuando el impulso pierde fuerza ya dibuja la vuelta: T −T −T en vez de T T −T. Se entera antes de los giros, pero cambia de lado el doble de veces"><input type="checkbox" data-ghost="e"> <span class="gsw" style="--g:#c77dff"></span>e MACD anticipado</label>
+      <select id="ghost-macd" aria-label="Parámetros del MACD" title="Parámetros del MACD (rápida/lenta/señal) para el modo d y el panel del MACD. Más cortos = se entera antes de un giro, pero también cambia de idea más seguido"></select>
+      <select id="ghost-n" aria-label="Velas promediadas">
+        <option value="10">N = 10</option><option value="20">N = 20</option><option value="50">N = 50</option>
+      </select>
+      <button type="button" id="gt-btn" aria-pressed="false" title="Elegir una vela del pasado: las velas posibles se calculan solo con lo anterior y se dibujan sobre las 3 velas reales que vinieron después, con la tabla de aciertos de cada modo">Probar en la historia</button></span>
+    <label class="toggle" id="strat-toggle-label" hidden><input type="checkbox" id="strat-toggle" checked> Estrategia 4h</label>
+    <span class="spacer"></span>
+    <a href="liquidez.html" target="_blank" rel="noopener" class="muted" title="Liquidaciones estimadas hora por hora, últimos 30 días">Mapa de calor de liquidez ↗</a>
+    <a href="ayuda.html" class="muted" title="Cómo leer cada indicador y qué valores mirar">Ayuda: cómo leer el panel</a>
+    <button type="button" class="muted prefs-btn" id="prefs-btn">Configuración: solo este navegador</button>
+    <span class="muted" id="updated">cargando…</span>
+    <span class="muted">Eje en UTC</span>
+    </div>
+    <button type="button" class="fs-btn" id="fs-btn" aria-pressed="false" title="Pantalla completa (Esc para salir)">⛶ Pantalla completa</button>
+  </div>
+  <div class="chips" id="pane-chips" role="group" aria-label="Paneles del gráfico"></div>
+  <div class="chips" id="overlay-chips" role="group" aria-label="Indicadores sobre el precio"></div>
+
+  <section class="card chart-card" aria-label="Precio y derivados">
+    <div id="chart"></div>
+    <canvas id="vp-canvas"></canvas>
+    <canvas id="liq-canvas"></canvas>
+    <div id="labels"></div>
+    <div class="liq-legend" id="liq-legend" hidden></div>
+    <label class="xzoom">Ancho de velas
+      <input type="range" id="xzoom" min="0" max="1000" value="500" aria-label="Ancho de las velas (escala horizontal)">
+    </label>
+  </section>
+  <div class="card chart-legend" id="chart-legend" aria-label="Leyenda del gráfico"></div>
+
+  <section class="card ghost-test" id="gt-panel" hidden aria-label="Velas posibles: prueba en la historia">
+    <div class="head">
+      <b>Velas posibles en la historia</b>
+      <span id="gt-anchor" class="muted"></span>
+      <span><button type="button" id="gt-prev" aria-label="Vela anterior" title="Vela anterior (flecha ←)">◀</button>
+        <button type="button" id="gt-next" aria-label="Vela siguiente" title="Vela siguiente (flecha →)">▶</button></span>
+      <label class="toggle">Medir en <select id="gt-range" aria-label="Velas que entran en la tabla">
+        <option value="view">el tramo a la vista</option><option value="all">todas las velas cargadas</option></select></label>
+      <button type="button" id="gt-close">Cerrar</button>
+    </div>
+    <div class="scroll-x"><table id="gt-table"></table></div>
+    <div class="scroll-x"><table id="gt-macd"></table></div>
+    <p class="note">Cada vela del tramo se toma como la última cerrada: las velas posibles salen solo de las N anteriores
+      y del MACD hasta ahí, y se comparan con las 3 velas reales que siguieron. <b>velas</b>: dirección acertada vela a
+      vela; <b>3 de 3</b>: las tres en la dirección real (al azar sería 50 % y 12,5 %); <b>error</b>: mediana de la
+      distancia entre el cierre posible y el real al final de las 3 velas, en % del precio. Para comparar: <b>siempre ▲</b>
+      dibuja tres velas alcistas y <b>precio quieto</b> es el error de suponer que no se mueve. Click en una celda para
+      usar ese modo y ese N en el gráfico. Lo que da bien en un tramo elegido mirando el gráfico suele dar peor en otro:
+      probalo también con todas las velas cargadas y en otros timeframes.</p>
+  </section>
+
+  <section class="card verdicts-card" aria-label="Lectura rápida">
     <div class="verdicts" id="verdicts"></div>
   </section>
 
@@ -329,47 +439,22 @@
 
   <section class="card regime" id="regime" aria-label="Lectura de régimen" hidden></section>
 
-  <div class="toolbar">
-    <div class="seg" role="group" aria-label="Timeframe">
-      <button data-tf="1h" aria-pressed="true">1h</button>
-      <button data-tf="2h" aria-pressed="false">2h</button>
-      <button data-tf="3h" aria-pressed="false" title="Binance no tiene velas de 3 h: se arman con las de 1 h">3h</button>
-      <button data-tf="4h" aria-pressed="false">4h</button>
-      <button data-tf="5h" aria-pressed="false" title="Binance no tiene velas de 5 h: se arman con las de 1 h (grilla fija desde 1970, no arranca a las 00 cada día)">5h</button>
-      <button data-tf="1d" aria-pressed="false">1d</button>
-      <button data-tf="1w" aria-pressed="false" title="Semanas de lunes a domingo (UTC), como Binance">1w</button>
+  <section class="card perf" id="perf" aria-label="Rendimiento de la estrategia" hidden>
+    <div>
+      <h2 id="perf-title">Estrategia 4h</h2>
+      <p class="note" id="perf-note"></p>
     </div>
-    <label class="toggle"><input type="checkbox" id="vp-toggle" checked> Perfil de volumen
-      <select id="vp-source" aria-label="Volumen del perfil">
-        <option value="both">spot + perp</option><option value="spot">spot</option><option value="perp">perp</option>
-      </select></label>
-    <label class="toggle"><input type="checkbox" id="liq-toggle" checked> Mapa de liquidez</label>
-    <label class="toggle" title="SMA 50 y 200 hacia adelante: la parte de la ventana que ya pasó es exacta; el resto supone el precio quieto (línea) o moviéndose ±1 desvío típico (rango)"><input type="checkbox" id="proj-toggle" checked> Proyectar medias
-      <select id="proj-bars" aria-label="Velas a proyectar">
-        <option value="10">10 velas</option><option value="20">20 velas</option><option value="50">50 velas</option>
-      </select></label>
-    <span class="toggle ghost-ctl" title="3 velas hipotéticas después de la vela en curso, con el cuerpo y las sombras promedio de las últimas N velas cerradas. No predicen: muestran el tamaño típico de una vela">Velas posibles
-      <label title="Dirección: la de la mayoría de las últimas N velas; tamaño: promedio de todas"><input type="checkbox" data-ghost="a"> <span class="gsw" style="--g:#f2c200"></span>a mayoría</label>
-      <label title="Dirección: el signo de la suma de los cuerpos (momentum neto); tamaño: promedio solo de las velas de esa dirección"><input type="checkbox" data-ghost="b"> <span class="gsw" style="--g:#ff8a00"></span>b momentum</label>
-      <label title="Sin dirección: alterna empezando contra la vela en curso (si sube: baja/sube/baja; si baja: sube/baja/sube); tamaño: promedio de todas"><input type="checkbox" data-ghost="c"> <span class="gsw" style="--g:#a8c400"></span>c neutral</label>
-      <label title="Dirección según el MACD del timeframe que se está viendo (con la vela en curso): la línea MACD (arriba o abajo de 0) da la tendencia y el histograma si hay impulso o corrección; tamaño: promedio de todas"><input type="checkbox" data-ghost="d"> <span class="gsw" style="--g:#26c6da"></span>d MACD</label>
-      <label title="Como d, pero cuando el impulso pierde fuerza ya dibuja la vuelta: T −T −T en vez de T T −T. Se entera antes de los giros, pero cambia de lado el doble de veces"><input type="checkbox" data-ghost="e"> <span class="gsw" style="--g:#c77dff"></span>e MACD anticipado</label>
-      <select id="ghost-macd" aria-label="Parámetros del MACD" title="Parámetros del MACD (rápida/lenta/señal) para el modo d y el panel del MACD. Más cortos = se entera antes de un giro, pero también cambia de idea más seguido"></select>
-      <select id="ghost-n" aria-label="Velas promediadas">
-        <option value="10">N = 10</option><option value="20">N = 20</option><option value="50">N = 50</option>
-      </select>
-      <button type="button" id="gt-btn" aria-pressed="false" title="Elegir una vela del pasado: las velas posibles se calculan solo con lo anterior y se dibujan sobre las 3 velas reales que vinieron después, con la tabla de aciertos de cada modo">Probar en la historia</button></span>
-    <label class="toggle" id="strat-toggle-label" hidden><input type="checkbox" id="strat-toggle" checked> Estrategia 4h</label>
-    <span class="spacer"></span>
-    <button type="button" class="fs-btn" id="fs-btn" aria-pressed="false" title="Pantalla completa (Esc para salir)">⛶ Pantalla completa</button>
-    <a href="liquidez.html" target="_blank" rel="noopener" class="muted" title="Liquidaciones estimadas hora por hora, últimos 30 días">Mapa de calor de liquidez ↗</a>
-    <a href="ayuda.html" class="muted" title="Cómo leer cada indicador y qué valores mirar">Ayuda: cómo leer el panel</a>
-    <button type="button" class="muted prefs-btn" id="prefs-btn">Configuración: solo este navegador</button>
-    <span class="muted" id="updated">cargando…</span>
-    <span class="muted">Eje en UTC</span>
-  </div>
-  <div class="chips" id="pane-chips" role="group" aria-label="Paneles del gráfico"></div>
-  <div class="chips" id="overlay-chips" role="group" aria-label="Indicadores sobre el precio"></div>
+    <div class="perf-grid">
+      <div>
+        <div class="perf-legend" id="perf-legend"></div>
+        <div id="perf-chart"></div>
+      </div>
+      <div class="tables">
+        <div class="scroll-x"><table id="perf-metrics"></table></div>
+        <div class="scroll-x"><table id="perf-trades"></table></div>
+      </div>
+    </div>
+  </section>
 
   <details class="card lab" id="lab" hidden>
     <summary><b>Laboratorio de backtest</b><span class="muted">la estrategia 4h con otros parámetros, en el navegador</span></summary>
@@ -409,55 +494,6 @@
       <tbody id="fresh-body"></tbody>
     </table>
   </details>
-
-  <section class="card ghost-test" id="gt-panel" hidden aria-label="Velas posibles: prueba en la historia">
-    <div class="head">
-      <b>Velas posibles en la historia</b>
-      <span id="gt-anchor" class="muted"></span>
-      <span><button type="button" id="gt-prev" aria-label="Vela anterior" title="Vela anterior (flecha ←)">◀</button>
-        <button type="button" id="gt-next" aria-label="Vela siguiente" title="Vela siguiente (flecha →)">▶</button></span>
-      <label class="toggle">Medir en <select id="gt-range" aria-label="Velas que entran en la tabla">
-        <option value="view">el tramo a la vista</option><option value="all">todas las velas cargadas</option></select></label>
-      <button type="button" id="gt-close">Cerrar</button>
-    </div>
-    <div class="scroll-x"><table id="gt-table"></table></div>
-    <div class="scroll-x"><table id="gt-macd"></table></div>
-    <p class="note">Cada vela del tramo se toma como la última cerrada: las velas posibles salen solo de las N anteriores
-      y del MACD hasta ahí, y se comparan con las 3 velas reales que siguieron. <b>velas</b>: dirección acertada vela a
-      vela; <b>3 de 3</b>: las tres en la dirección real (al azar sería 50 % y 12,5 %); <b>error</b>: mediana de la
-      distancia entre el cierre posible y el real al final de las 3 velas, en % del precio. Para comparar: <b>siempre ▲</b>
-      dibuja tres velas alcistas y <b>precio quieto</b> es el error de suponer que no se mueve. Click en una celda para
-      usar ese modo y ese N en el gráfico. Lo que da bien en un tramo elegido mirando el gráfico suele dar peor en otro:
-      probalo también con todas las velas cargadas y en otros timeframes.</p>
-  </section>
-
-  <section class="card chart-card" aria-label="Precio y derivados">
-    <div id="chart"></div>
-    <canvas id="vp-canvas"></canvas>
-    <canvas id="liq-canvas"></canvas>
-    <div id="labels"></div>
-    <div class="liq-legend" id="liq-legend" hidden></div>
-    <label class="xzoom">Ancho de velas
-      <input type="range" id="xzoom" min="0" max="1000" value="500" aria-label="Ancho de las velas (escala horizontal)">
-    </label>
-  </section>
-
-  <section class="card perf" id="perf" aria-label="Rendimiento de la estrategia" hidden>
-    <div>
-      <h2 id="perf-title">Estrategia 4h</h2>
-      <p class="note" id="perf-note"></p>
-    </div>
-    <div class="perf-grid">
-      <div>
-        <div class="perf-legend" id="perf-legend"></div>
-        <div id="perf-chart"></div>
-      </div>
-      <div class="tables">
-        <div class="scroll-x"><table id="perf-metrics"></table></div>
-        <div class="scroll-x"><table id="perf-trades"></table></div>
-      </div>
-    </div>
-  </section>
 </main>
 
 <script>
@@ -602,6 +638,12 @@ function setFullscreen(on) {
   scrollTo(0, 0);
 }
 document.getElementById("fs-btn").addEventListener("click", () => setFullscreen(!document.body.classList.contains("fs")));
+// Celular: las opciones del gráfico (perfil, liquidez, velas posibles, paneles…) se despliegan con un botón
+document.getElementById("opts-btn").addEventListener("click", (ev) => {
+  const open = document.body.classList.toggle("opts-open");
+  ev.currentTarget.setAttribute("aria-expanded", String(open));
+  ev.currentTarget.textContent = open ? "✕ Cerrar opciones" : "⚙ Opciones";
+});
 // Esc (o el botón del navegador) sale de la pantalla completa del navegador: se sale también del modo
 document.addEventListener("fullscreenchange", () => {
   if (document.fullscreenElement) requestAnimationFrame(() => rebuildChart());
@@ -1072,6 +1114,14 @@ function renderLabels(param) {
   }
   // Los superpuestos van en la etiqueta del precio, una línea cada uno con su color
   html.price += overlays.map((k) => `<br><span class="box ov" style="background:${css(`--ov-${k}`)}"></span>${html[k]}`).join("");
+  if (MOBILE) {
+    // En el celular la etiqueta completa taparía las velas: arriba queda un renglón y el resto va debajo del gráfico
+    const liqLegend = document.getElementById("liq-legend");
+    document.getElementById("chart-legend").innerHTML = html.price
+      + (liqLegend.hidden || !liqLegend.innerHTML ? "" : `<br>${liqLegend.innerHTML}`);
+    html.price = `${c ? `C <b>${fmtPrice(c.close)}</b>` : "Precio"}`
+      + `${sw(t.muted, true)}<b>${fmtPrice(val(v.s50))}</b>${sw(t.primary)}<b>${fmtPrice(val(v.s200))}</b>`;
+  }
   for (const el of box.children) el.innerHTML = html[el.dataset.key];
 }
 
@@ -2145,10 +2195,11 @@ function setLiquidityLines() {
   liq.lines = [];
   const L = liq.data, legend = document.getElementById("liq-legend");
   legend.hidden = !(liqOn && L);
-  if (!liqOn || !L) return;
+  if (!liqOn || !L) { if (MOBILE) renderLabels(); return; }
   const t = theme();
+  // En el celular sin título: los textos sobre las líneas tapan las velas (el precio sigue en el eje)
   const add = (price, color, style, width, title) => liq.lines.push(S.candles.createPriceLine({
-    price, color, lineStyle: style, lineWidth: width, axisLabelVisible: true, title }));
+    price, color, lineStyle: style, lineWidth: width, axisLabelVisible: true, title: MOBILE ? "" : title }));
 
   const sp = L.swing_pools || {};
   for (const g of sp.above || []) add(g.price, t.muted, LWC.LineStyle.Dotted, 1, `máx sin barrer ×${g.touches}`);
@@ -2171,6 +2222,7 @@ function setLiquidityLines() {
       + `<span class="sw dash" style="border-top-color:${t.muted}"></span>máx/mín sin barrer`
       + `<span class="sw" style="border-top-color:${t.s2}"></span>muros del libro`
       + (MOBILE ? "" : ` · <span class="muted">${L.model}; libros ${fmtLocal(L.generated)}</span>`);
+  if (MOBILE) renderLabels();  // la leyenda de liquidez va en la leyenda de abajo del gráfico
 }
 
 function drawLiquidity() {
