@@ -3,8 +3,8 @@
 Todo corre como usuario, sin root.
 
 - `systemd/`: servicios de usuario. Los tres recolectores (ballenas,
-  liquidaciones y libro por minuto) y el servidor estático del panel en `127.0.0.1:8000`, que
-  Cloudflare Tunnel publica en `malbecmotion.com/sbs/btc/`.
+  liquidaciones y libro por minuto) y el servidor del panel en `127.0.0.1:8000` (`panel_server.py`: los archivos
+  de `publico/` y la configuración guardada), que Cloudflare Tunnel publica en `malbecmotion.com/sbs/btc/`.
 
   ```bash
   cp deploy/systemd/*.service ~/.config/systemd/user/
@@ -22,6 +22,16 @@ Todo corre como usuario, sin root.
   ```bash
   mkdir -p publico/sbs/btc/data
   ln -s "$PWD/data/dashboard" publico/sbs/btc/data/dashboard
+  ```
+
+- Configuración del panel guardada en el servidor: la clave va en `~/.config/claude-cripto/panel.env`
+  (fuera del repo) y la configuración queda en `~/.config/claude-cripto/panel.json`. Sin ese archivo la
+  dirección `config` rechaza todo y el panel guarda solo en cada navegador. La clave se relee en cada pedido.
+
+  ```bash
+  mkdir -p ~/.config/claude-cripto && chmod 700 ~/.config/claude-cripto
+  echo "PANEL_CLAVE=$(python3 -c 'import secrets; print(secrets.token_urlsafe(9))')" > ~/.config/claude-cripto/panel.env
+  chmod 600 ~/.config/claude-cripto/panel.env
   ```
 
 Las rutas absolutas de los servicios asumen

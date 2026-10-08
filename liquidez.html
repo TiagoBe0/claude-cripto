@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Mapa de liquidez BTC</title>
+<script src="prefs.js"></script>
 <style>
   :root {
     color-scheme: light;
@@ -66,6 +67,7 @@
   h1 { font-size: 18px; margin: 0; font-weight: 600; }
   a { color: var(--accent); }
   .muted { color: var(--text-muted); font-size: 12px; }
+  .prefs-btn { font: inherit; font-size: 12px; background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline dotted; }
   .spacer { flex: 1; }
   .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; }
 
@@ -122,6 +124,7 @@
     <span class="spacer"></span>
     <a href="./">← Panel</a>
     <a href="ayuda.html#liquidez">Cómo leerlo</a>
+    <button type="button" class="muted prefs-btn" id="prefs-btn">Configuración: solo este navegador</button>
   </header>
 
   <div class="stats" id="stats"></div>
@@ -256,7 +259,7 @@ if (!MODES[st.mode]) st.mode = "liq";
 if (!["both", "below", "above"].includes(st.side)) st.side = "both";
 if (!["1", "1.5", "2", "3"].includes(st.span)) st.span = "1.5";
 const save = () => {
-  try { localStorage.setItem("liqmap", JSON.stringify({ side: st.side, scale: st.scale, span: st.span, gain: st.gain, mode: st.mode, show: st.show })); } catch (e) { /* nada */ }
+  try { prefSet("liqmap", JSON.stringify({ side: st.side, scale: st.scale, span: st.span, gain: st.gain, mode: st.mode, show: st.show })); } catch (e) { /* nada */ }
 };
 
 const canvas = el("heat"), ctx = canvas.getContext("2d");

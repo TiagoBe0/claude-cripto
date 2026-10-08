@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>BTC Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@5.2.1/dist/lightweight-charts.standalone.production.js"></script>
+<script src="prefs.js"></script>
 <style>
   :root {
     color-scheme: light;
@@ -102,6 +103,7 @@
   header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
   h1 { font-size: 18px; margin: 0; font-weight: 600; }
   .muted { color: var(--text-muted); font-size: 12px; }
+  .prefs-btn { font: inherit; font-size: 12px; background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline dotted; }
   .spacer { flex: 1; }
   .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
   .seg button {
@@ -362,6 +364,7 @@
     <button type="button" class="fs-btn" id="fs-btn" aria-pressed="false" title="Pantalla completa (Esc para salir)">⛶ Pantalla completa</button>
     <a href="liquidez.html" target="_blank" rel="noopener" class="muted" title="Liquidaciones estimadas hora por hora, últimos 30 días">Mapa de calor de liquidez ↗</a>
     <a href="ayuda.html" class="muted" title="Cómo leer cada indicador y qué valores mirar">Ayuda: cómo leer el panel</a>
+    <button type="button" class="muted prefs-btn" id="prefs-btn">Configuración: solo este navegador</button>
     <span class="muted" id="updated">cargando…</span>
     <span class="muted">Eje en UTC</span>
   </div>
@@ -624,8 +627,8 @@ function renderPaneChips() {
 }
 function savePanes() {
   try {
-    localStorage.setItem("panes", JSON.stringify(enabledPanes));
-    localStorage.setItem("overlays", JSON.stringify(overlays));
+    prefSet("panes", JSON.stringify(enabledPanes));
+    prefSet("overlays", JSON.stringify(overlays));
   } catch (e) { /* nada */ }
   renderPaneChips();
   rebuildChart();
@@ -646,6 +649,41 @@ document.getElementById("overlay-chips").addEventListener("click", (ev) => {
 });
 
 // Rehace el gráfico con los paneles elegidos, conservando lo que se estaba mirando
+// Zoom de cada timeframe: cuántas velas se ven y dónde. Pegado al borde derecho sigue pegado cuando llegan velas
+// nuevas; si se estaba mirando el pasado se vuelve a la misma fecha.
+let viewTimer = 0;
+function scheduleSaveView() {
+  clearTimeout(viewTimer);
+  viewTimer = setTimeout(saveView, 800);
+}
+function saveView() {
+  const c = current.data.candles, lr = chart && chart.timeScale().getVisibleLogicalRange();
+  if (!c || !c.t.length || !lr || current.data.timeframe !== current.tf) return;
+  const last = c.t.length - 1, span = lr.to - lr.from;
+  const i = Math.max(0, Math.min(last, Math.floor(lr.to)));
+  const v = lr.to >= last - 2 ? { span, gap: lr.to - last } : { span, toT: c.t[i], frac: lr.to - i };
+  try {
+    const views = JSON.parse(localStorage.getItem("views") || "{}");
+    views[current.tf] = v;
+    prefSet("views", JSON.stringify(views));
+  } catch (e) { /* nada */ }
+}
+function savedView(c, tf) {
+  let v;
+  try { v = JSON.parse(localStorage.getItem("views") || "{}")[tf]; } catch (e) { return null; }
+  if (!v || !(v.span > 1)) return null;
+  const last = c.t.length - 1;
+  let to;
+  if (v.gap != null) to = last + v.gap;
+  else {
+    // La vela con esa fecha (o la anterior si cambió la grilla)
+    let lo = 0, hi = last;
+    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (c.t[mid] <= v.toT) lo = mid; else hi = mid - 1; }
+    to = lo + (v.frac || 0);
+  }
+  return { from: to - v.span, to };
+}
+
 function rebuildChart() {
   const lr = chart.timeScale().getVisibleLogicalRange();
   chart.remove();
@@ -756,6 +794,7 @@ function buildChart() {
 
   chart.subscribeCrosshairMove((param) => renderLabels(param));
   chart.timeScale().subscribeVisibleLogicalRangeChange(syncXZoom);
+  chart.timeScale().subscribeVisibleLogicalRangeChange(scheduleSaveView);
   chart.timeScale().subscribeVisibleLogicalRangeChange(() => gt.on && gt.range === "view" && gtSchedule());
   chart.subscribeClick(gtPick);
   if (!buildChart.observed) {
@@ -953,7 +992,8 @@ function setChartData(data, keepView) {
     // Vista inicial: ~1 mes en 1h, 2 en 2h y 3h, 3 en 4h y 5h, 1 año en 1d y 3 años en 1w
     const n = c.t.length, span = { "1h": 24 * 30, "2h": 12 * 60, "3h": 8 * 60, "4h": 6 * 90, "5h": 24 / 5 * 90 | 0, "1d": 365, "1w": 156 }[data.timeframe] || 365;
     const ahead = Math.max(proj.on ? proj.bars : 0, ghost.modes.size ? GHOST_BARS + 1 : 0);
-    ts.setVisibleLogicalRange({ from: Math.max(0, n - span), to: n + 3 + ahead });
+    const v = savedView(c, data.timeframe);
+    ts.setVisibleLogicalRange(v || { from: Math.max(0, n - span), to: n + 3 + ahead });
   }
   renderLabels();
   requestAnimationFrame(positionLabels);
@@ -1051,7 +1091,7 @@ try { const v = localStorage.getItem("strat"); if (v != null) stratOn = v !== "0
 document.getElementById("strat-toggle").checked = stratOn;
 document.getElementById("strat-toggle").addEventListener("change", (ev) => {
   stratOn = ev.target.checked;
-  try { localStorage.setItem("strat", stratOn ? "1" : "0"); } catch (e) { /* nada */ }
+  try { prefSet("strat", stratOn ? "1" : "0"); } catch (e) { /* nada */ }
   applyTheme();
 });
 
@@ -1069,12 +1109,12 @@ document.getElementById("proj-toggle").checked = proj.on;
 document.getElementById("proj-bars").value = String(proj.bars);
 document.getElementById("proj-toggle").addEventListener("change", (ev) => {
   proj.on = ev.target.checked;
-  try { localStorage.setItem("proj", proj.on ? "1" : "0"); } catch (e) { /* nada */ }
+  try { prefSet("proj", proj.on ? "1" : "0"); } catch (e) { /* nada */ }
   applyTheme(); setProjection();
 });
 document.getElementById("proj-bars").addEventListener("change", (ev) => {
   proj.bars = +ev.target.value;
-  try { localStorage.setItem("proj-bars", String(proj.bars)); } catch (e) { /* nada */ }
+  try { prefSet("proj-bars", String(proj.bars)); } catch (e) { /* nada */ }
   setProjection();
 });
 
@@ -1173,7 +1213,7 @@ document.querySelectorAll("[data-ghost]").forEach((el) => {
   el.checked = ghost.modes.has(el.dataset.ghost);
   el.addEventListener("change", () => {
     ghost.modes[el.checked ? "add" : "delete"](el.dataset.ghost);
-    try { localStorage.setItem("ghost-modes", [...ghost.modes].sort().join("")); } catch (e) { /* nada */ }
+    try { prefSet("ghost-modes", [...ghost.modes].sort().join("")); } catch (e) { /* nada */ }
     setGhosts();
     if (gt.on) gtCalibrate();
   });
@@ -1181,7 +1221,7 @@ document.querySelectorAll("[data-ghost]").forEach((el) => {
 document.getElementById("ghost-n").value = String(ghost.n);
 document.getElementById("ghost-n").addEventListener("change", (ev) => {
   ghost.n = +ev.target.value;
-  try { localStorage.setItem("ghost-n", String(ghost.n)); } catch (e) { /* nada */ }
+  try { prefSet("ghost-n", String(ghost.n)); } catch (e) { /* nada */ }
   setGhosts();
   if (gt.on) gtCalibrate();
 });
@@ -1195,7 +1235,7 @@ macdSel.addEventListener("change", (ev) => setMacdPreset(ev.target.value));
 function setMacdPreset(p) {
   ghost.macd = p;
   macdSel.value = p;
-  try { localStorage.setItem("ghost-macd-2", p); } catch (e) { /* nada */ }
+  try { prefSet("ghost-macd-2", p); } catch (e) { /* nada */ }
   if (current.data.candles) setMacdHist(current.data.candles);
   setGhosts();
   if (gt.on) gtCalibrate();
@@ -1413,8 +1453,13 @@ function renderGtHead(c, k) {
       + (k + GHOST_BARS >= c.t.length ? " · todavía no hay 3 velas después" : "");
 }
 
+function gtSave() {
+  try { prefSet("gt", JSON.stringify({ on: gt.on, t: gt.t, range: gt.range })); } catch (e) { /* nada */ }
+}
+
 function gtSet(on) {
   gt.on = on;
+  gtSave();
   document.getElementById("gt-btn").setAttribute("aria-pressed", String(on));
   document.getElementById("gt-panel").hidden = !on;
   document.body.classList.toggle("ghost-picking", on);
@@ -1433,6 +1478,7 @@ function gtGo(i) {
   const c = current.data.candles;
   if (!c || !c.t.length) return;
   gt.t = c.t[Math.max(0, Math.min(c.t.length - 1, i))];
+  gtSave();
   setGhosts();
 }
 
@@ -1623,7 +1669,7 @@ document.getElementById("gt-btn").addEventListener("click", () => gtSet(!gt.on))
 document.getElementById("gt-close").addEventListener("click", () => gtSet(false));
 document.getElementById("gt-prev").addEventListener("click", () => gtMove(-1));
 document.getElementById("gt-next").addEventListener("click", () => gtMove(1));
-document.getElementById("gt-range").addEventListener("change", (ev) => { gt.range = ev.target.value; gtCalibrate(); });
+document.getElementById("gt-range").addEventListener("change", (ev) => { gt.range = ev.target.value; gtSave(); gtCalibrate(); });
 document.getElementById("gt-macd").addEventListener("click", (ev) => {
   const td = ev.target.closest("[data-preset]");
   if (td) setMacdPreset(td.dataset.preset);
@@ -1636,8 +1682,8 @@ document.getElementById("gt-table").addEventListener("click", (ev) => {
   document.querySelectorAll("[data-ghost]").forEach((el) => { el.checked = ghost.modes.has(el.dataset.ghost); });
   document.getElementById("ghost-n").value = String(ghost.n);
   try {
-    localStorage.setItem("ghost-modes", [...ghost.modes].sort().join(""));
-    localStorage.setItem("ghost-n", String(ghost.n));
+    prefSet("ghost-modes", [...ghost.modes].sort().join(""));
+    prefSet("ghost-n", String(ghost.n));
   } catch (e) { /* nada */ }
   setGhosts();
   gtCalibrate();
@@ -2088,7 +2134,7 @@ try { const v = localStorage.getItem("liq"); if (v != null) liqOn = v !== "0"; }
 document.getElementById("liq-toggle").checked = liqOn;
 document.getElementById("liq-toggle").addEventListener("change", (ev) => {
   liqOn = ev.target.checked;
-  try { localStorage.setItem("liq", liqOn ? "1" : "0"); } catch (e) { /* nada */ }
+  try { prefSet("liq", liqOn ? "1" : "0"); } catch (e) { /* nada */ }
   setLiquidityLines(); liq.key = "";
 });
 
@@ -2190,11 +2236,11 @@ document.getElementById("vp-toggle").checked = vp.on;
 document.getElementById("vp-source").value = vp.source;
 document.getElementById("vp-toggle").addEventListener("change", (ev) => {
   vp.on = ev.target.checked; vp.key = "";
-  try { localStorage.setItem("vp", vp.on ? "1" : "0"); } catch (e) { /* nada */ }
+  try { prefSet("vp", vp.on ? "1" : "0"); } catch (e) { /* nada */ }
 });
 document.getElementById("vp-source").addEventListener("change", (ev) => {
   vp.source = ev.target.value; vp.key = "";
-  try { localStorage.setItem("vp-source", vp.source); } catch (e) { /* nada */ }
+  try { prefSet("vp-source", vp.source); } catch (e) { /* nada */ }
 });
 
 function volumeProfile(c, from, to, source) {
@@ -2928,6 +2974,7 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => char
 function selectTf(tf) {
   document.querySelectorAll(".seg button").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.tf === tf)));
   history.replaceState(null, "", "#" + tf);
+  try { prefSet("tf", tf); } catch (e) { /* nada */ }
   live.bar = null;
   live.hours = new Map();
   current.tf = tf;
@@ -2937,9 +2984,22 @@ function selectTf(tf) {
 
 renderPaneChips();
 buildChart();
+// Probar en la historia: como se dejó (prendido, vela elegida y rango de la tabla)
+try {
+  const g = JSON.parse(localStorage.getItem("gt") || "null");
+  if (g) {
+    gt.t = g.t ?? null;
+    if (g.range === "all" || g.range === "view") gt.range = document.getElementById("gt-range").value = g.range;
+    if (g.on) gtSet(true);
+  }
+} catch (e) { /* nada */ }
 requestAnimationFrame(drawLiquidity);
 requestAnimationFrame(drawVolumeProfile);
-selectTf(location.hash.slice(1) in TF_S ? location.hash.slice(1) : "1h");
+// Timeframe: el último que se usó (guardado, también en el servidor); si no hay, el del enlace (#4h…) o 1h.
+// El guardado le gana al enlace porque la dirección de la pestaña conserva el #tf viejo al recargar.
+let savedTf = null;
+try { savedTf = localStorage.getItem("tf"); } catch (e) { /* nada */ }
+selectTf(savedTf in TF_S ? savedTf : location.hash.slice(1) in TF_S ? location.hash.slice(1) : "1h");
 setInterval(refresh, REFRESH_MS);
 </script>
 </body>

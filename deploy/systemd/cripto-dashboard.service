@@ -4,7 +4,7 @@ After=network-online.target
 
 [Service]
 WorkingDirectory=/home/simaf/sbergamin/root/claude-cripto
-ExecStart=/home/simaf/sbergamin/root/claude-cripto/.venv/bin/python -m http.server 8000 --bind 127.0.0.1 --directory /home/simaf/sbergamin/root/claude-cripto/publico
+ExecStart=/home/simaf/sbergamin/root/claude-cripto/.venv/bin/python /home/simaf/sbergamin/root/claude-cripto/panel_server.py --port 8000 --bind 127.0.0.1
 Restart=on-failure
 RestartSec=10
 

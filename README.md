@@ -101,7 +101,15 @@ Para verlo (el navegador no deja leer los JSON abriendo el HTML con doble clic):
 .venv/bin/python -m http.server 8000 --bind 127.0.0.1
 ```
 
-y abrir <http://127.0.0.1:8000/dashboard.html> (`#2h`, `#1d`, `#1w`... para elegir el timeframe). Se recarga solo cada 5 min.
+y abrir <http://127.0.0.1:8000/dashboard.html> (`#2h`, `#1d`, `#1w`... para elegir el timeframe si no hay uno guardado).
+Se recarga solo cada 5 min.
+
+Configuración: todo lo que se elige (paneles, superpuestos, timeframe, zoom de cada timeframe, interruptores, velas
+posibles, Probar en la historia, mapa de liquidez) queda en el navegador. Con la clave del panel (botón
+*Configuración* arriba a la derecha) también se guarda en el servidor y vale en cualquier compu o celular: lo hace
+`panel_server.py`, que reemplaza a `http.server` (sirve `publico/` y `GET/PUT /sbs/btc/config` con la clave de
+`~/.config/claude-cripto/panel.env`; ver `deploy/README.md`). Para probarlo en local:
+`.venv/bin/python panel_server.py --port 8000` y abrir <http://127.0.0.1:8000/sbs/btc/>.
 
 Timeframes: 1h, 4h y 1d son las velas bajadas de Binance; 2h, 3h y 5h se arman agrupando las de 1h (desde 2024) y 1w las de 4h
 (desde 2017), todas alineadas como Binance (semanas de lunes a domingo UTC; 3h y 5h, que Binance no tiene, en una grilla
