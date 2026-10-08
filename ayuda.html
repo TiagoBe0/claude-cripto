@@ -355,11 +355,18 @@
             y el histograma la fase. Histograma a favor y creciendo = impulso ▲▲▲; a favor pero achicándose = pierde fuerza ▲▲▼;
             en contra y creciendo = corrección ▼▼▲; en contra pero achicándose = la corrección termina ▼▲▲ (ejemplo con tendencia alcista;
             al revés si es bajista). Por eso en 1w puede dar tres velas alcistas y en 4h una corrección bajista antes de seguir).
+            El MACD se calcula en el navegador con la vela en curso (cambia hasta que cierra) y con los parámetros del selector:
+            12/26/9 clásico u otros más cortos (8/21/5, 8/17/9, 5/35/5, 5/13/5, 3/10/16) que se enteran antes de un giro pero cambian
+            de idea más seguido. El panel del MACD muestra los mismos parámetros.
             Si a y b no coinciden, hubo más velas a favor de un lado pero más grandes del otro.</li>
           <li><b>Probar en la historia</b>: click en una vela del pasado (o ◀ ▶ y las flechas del teclado). Se toma como la última cerrada:
             las velas posibles salen solo de las N anteriores y del MACD hasta ahí, y se dibujan semitransparentes sobre las 3 velas
             reales que siguieron, con cuántas acertó cada modo. La tabla repite eso con cada vela del tramo a la vista (o con todas
-            las cargadas) para los 4 modos, las 4 fases del MACD y los tres N; click en una celda usa ese modo y ese N.</li>
+            las cargadas) para los 4 modos, las 4 fases del MACD y los tres N; click en una celda usa ese modo y ese N.
+            Una segunda tabla compara los parámetros del MACD: aciertos, cuántas velas tarda la primera vela posible en apuntar para el
+            lado nuevo después de un giro (el cierre más alto o más bajo de 5 velas a cada lado), en cuántos giros no se entera en
+            20 velas y cuántas veces cambia de idea cada 100 velas. Con todas las velas cargadas, 5/13/5 se entera en ~3 velas
+            contra ~4,7 del 12/26/9 y no se pierde giros (12/26/9: 4–10 %), pero cambia de idea el doble; los aciertos no cambian.</li>
           <li>Lo que no dice: hacia dónde va el precio. Medido con todas las velas cargadas (1h, 4h y 1d, octubre de 2026), los cuatro modos
             aciertan 47–51 % de las velas y las tres juntas 9–14 % de las veces, como tirar una moneda (50 % y 12,5 %); ninguna fase
             del MACD se separa. El cierre posible queda más lejos del real que suponer el precio quieto. Sirve para ver el tamaño

@@ -139,6 +139,10 @@ systemctl --user disable --now cripto-dashboard  # desinstalar
   con lo anterior, dibujadas sobre las 3 reales; una tabla mide cada modo, cada fase del MACD y cada N con todas las
   velas del tramo a la vista (o todas las cargadas): acierto por vela, 3 de 3 y mediana del error del cierre, contra
   "siempre ▲" y "precio quieto". Medido en 1h/4h/1d (oct. 2026): 47–51 % por vela y 9–14 % las tres, como al azar.
+  El MACD del modo d se calcula en el navegador con la vela en curso y parámetros elegibles (12/26/9, 8/21/5, 8/17/9,
+  5/35/5, 5/13/5, 3/10/16; el panel del MACD los sigue). En la prueba, una segunda tabla mide por parámetros cuántas
+  velas tarda en enterarse de un giro (pivote de 5 velas por lado), los giros que se pierde y los cambios de idea:
+  5/13/5 ~3 velas y ningún giro perdido contra ~4,7 velas del 12/26/9, con el doble de cambios y los mismos aciertos.
 - *Mapa de liquidez* (interruptor arriba, se recuerda en el navegador), sobre el panel de precio:
   barras horizontales con las liquidaciones **estimadas** por tramo de 0,5% hasta ±15% del precio (rojo = largos,
   azul = cortos, con el monto en los 3 tramos mayores de cada lado), líneas punteadas en los máximos y mínimos sin

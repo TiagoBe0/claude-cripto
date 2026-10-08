@@ -350,7 +350,8 @@
       <label title="Dirección: la de la mayoría de las últimas N velas; tamaño: promedio de todas"><input type="checkbox" data-ghost="a"> <span class="gsw" style="--g:#f2c200"></span>a mayoría</label>
       <label title="Dirección: el signo de la suma de los cuerpos (momentum neto); tamaño: promedio solo de las velas de esa dirección"><input type="checkbox" data-ghost="b"> <span class="gsw" style="--g:#ff8a00"></span>b momentum</label>
       <label title="Sin dirección: alterna empezando contra la vela en curso (si sube: baja/sube/baja; si baja: sube/baja/sube); tamaño: promedio de todas"><input type="checkbox" data-ghost="c"> <span class="gsw" style="--g:#a8c400"></span>c neutral</label>
-      <label title="Dirección según el MACD 12/26/9 del timeframe que se está viendo: la línea MACD (arriba o abajo de 0) da la tendencia y el histograma si hay impulso o corrección; tamaño: promedio de todas"><input type="checkbox" data-ghost="d"> <span class="gsw" style="--g:#26c6da"></span>d MACD</label>
+      <label title="Dirección según el MACD del timeframe que se está viendo (con la vela en curso): la línea MACD (arriba o abajo de 0) da la tendencia y el histograma si hay impulso o corrección; tamaño: promedio de todas"><input type="checkbox" data-ghost="d"> <span class="gsw" style="--g:#26c6da"></span>d MACD</label>
+      <select id="ghost-macd" aria-label="Parámetros del MACD" title="Parámetros del MACD (rápida/lenta/señal) para el modo d y el panel del MACD. Más cortos = se entera antes de un giro, pero también cambia de idea más seguido"></select>
       <select id="ghost-n" aria-label="Velas promediadas">
         <option value="10">N = 10</option><option value="20">N = 20</option><option value="50">N = 50</option>
       </select>
@@ -416,6 +417,7 @@
       <button type="button" id="gt-close">Cerrar</button>
     </div>
     <div class="scroll-x"><table id="gt-table"></table></div>
+    <div class="scroll-x"><table id="gt-macd"></table></div>
     <p class="note">Cada vela del tramo se toma como la última cerrada: las velas posibles salen solo de las N anteriores
       y del MACD hasta ahí, y se comparan con las 3 velas reales que siguieron. <b>velas</b>: dirección acertada vela a
       vela; <b>3 de 3</b>: las tres en la dirección real (al azar sería 50 % y 12,5 %); <b>error</b>: mediana de la
@@ -864,14 +866,17 @@ function setFunding(d) {
   S.funding.setData(pts);
 }
 
+// Panel del MACD con los parámetros elegidos en las velas posibles (12/26/9 por defecto)
 function setMacdHist(c) {
-  const t = theme();
+  const t = theme(), m = macdSeries(c, ghost.macd);
   const pts = [];
   for (let i = 0; i < c.t.length; i++) {
-    const v = c.macd_hist[i];
+    const v = m.hist[i];
     if (v != null) pts.push({ time: c.t[i], value: v, color: barColor("macd", v, t) });
   }
   S.macdHist.setData(pts);
+  S.macd.setData(line(c.t, m.macd));
+  S.macdSignal.setData(line(c.t, m.signal));
 }
 
 function setWhales(w) {
@@ -932,8 +937,6 @@ function setChartData(data, keepView) {
   S.lsGlobal.setData(line(d.t, d.global_account_ls_ratio));
   S.rsi.setData(line(c.t, c.rsi_14));
   setMacdHist(c);
-  S.macd.setData(line(c.t, c.macd));
-  S.macdSignal.setData(line(c.t, c.macd_signal));
   S.dvol.setData(line(c.t, c.dvol));
   S.rv.setData(line(c.t, c.rv_30d));
   S.fng.setData(line(c.t, c.fng));
@@ -1004,7 +1007,7 @@ function renderLabels(param) {
         + `<span class="box" style="background:${t.s1}"></span>área de valor 70 % <b>${fmtPrice(vp.info.val)}</b> – <b>${fmtPrice(vp.info.vah)}</b>` : ""),
     volume: `Volumen spot <b>${fmtVol(val(v.v))}</b>`,
     rsi: `RSI 14 <b>${fmtNum(val(v.rsi), 1)}</b> <span class="muted">(guías 30 y 70)</span>`,
-    macd: `MACD 12/26/9${sw(col("macd", t.s1))}MACD <b>${fmtNum(val(v.m), 0)}</b>${sw(col("macd", t.s2), true)}señal <b>${fmtNum(val(v.ms), 0)}</b>`
+    macd: `MACD ${ghost.macd}${sw(col("macd", t.s1))}MACD <b>${fmtNum(val(v.m), 0)}</b>${sw(col("macd", t.s2), true)}señal <b>${fmtNum(val(v.ms), 0)}</b>`
       + ` · histograma <b>${fmtNum(val(v.mh), 0)}</b>`,
     vol: `Volatilidad anualizada${sw(col("vol", t.s1))}DVOL implícita 30 d <b>${fmtNum(val(v.dvol), 1)}%</b>`
       + `${sw(col("vol", t.s2), true)}realizada 30 d <b>${fmtNum(val(v.rv), 1)}%</b>`,
@@ -1143,8 +1146,9 @@ function projLabel() {
 //   a mayoría:  la de la mayoría de las N velas (empate: la de la última); tamaño promedio de todas.
 //   b momentum: el signo de la suma de los cuerpos; tamaño promedio solo de las velas de esa dirección.
 //   c neutral:  alterna empezando contra la vela en curso (el precio oscila); tamaño promedio de todas.
-//   d MACD:     según el MACD 12/26/9 del timeframe a la vista (por eso 1w y 4h pueden dar cosas distintas);
-//               la línea MACD da la tendencia T (arriba de 0 = sube) y el histograma la fase; tamaño de todas:
+//   d MACD:     según el MACD del timeframe a la vista (por eso 1w y 4h pueden dar cosas distintas), calculado en el
+//               navegador con la vela en curso y los parámetros elegidos (12/26/9 por defecto; más cortos = se entera
+//               antes del giro); la línea MACD da la tendencia T (arriba de 0 = sube) y el histograma la fase; tamaño de todas:
 //                 histograma a favor de T y creciendo   → impulso:                T T T
 //                 a favor de T pero achicándose         → impulso perdiendo fuerza: T T −T
 //                 en contra de T y creciendo            → corrección:             −T −T T
@@ -1153,11 +1157,14 @@ function projLabel() {
 const GHOST_COLORS = { a: "#f2c200", b: "#ff8a00", c: "#a8c400", d: "#26c6da" };
 const GHOST_NAMES = { a: "mayoría", b: "momentum", c: "neutral", d: "MACD" };
 const GHOST_BARS = 3;
-const ghost = { modes: new Set(["b"]), n: 20, info: {} };
+// Parámetros del MACD (rápida/lenta/señal): el clásico y otros más rápidos que se usan en cripto
+const MACD_PRESETS = { "12/26/9": "clásico", "8/21/5": "", "8/17/9": "", "5/35/5": "", "5/13/5": "rápido", "3/10/16": "Raschke" };
+const ghost = { modes: new Set(["b"]), n: 20, macd: "12/26/9", info: {} };
 try {
   const m = localStorage.getItem("ghost-modes");
   if (m != null) ghost.modes = new Set([...m].filter((x) => x in GHOST_COLORS));
   const n = +localStorage.getItem("ghost-n"); if ([10, 20, 50].includes(n)) ghost.n = n;
+  const p = localStorage.getItem("ghost-macd"); if (p in MACD_PRESETS) ghost.macd = p;
 } catch (e) { /* sin storage: valores por defecto */ }
 document.querySelectorAll("[data-ghost]").forEach((el) => {
   el.checked = ghost.modes.has(el.dataset.ghost);
@@ -1175,6 +1182,51 @@ document.getElementById("ghost-n").addEventListener("change", (ev) => {
   setGhosts();
   if (gt.on) gtCalibrate();
 });
+
+const macdSel = document.getElementById("ghost-macd");
+macdSel.innerHTML = Object.entries(MACD_PRESETS)
+  .map(([p, name]) => `<option value="${p}">MACD ${p}${name ? ` ${name}` : ""}</option>`).join("");
+macdSel.value = ghost.macd;
+macdSel.addEventListener("change", (ev) => setMacdPreset(ev.target.value));
+
+function setMacdPreset(p) {
+  ghost.macd = p;
+  macdSel.value = p;
+  try { localStorage.setItem("ghost-macd", p); } catch (e) { /* nada */ }
+  if (current.data.candles) setMacdHist(current.data.candles);
+  setGhosts();
+  if (gt.on) gtCalibrate();
+}
+
+// EMA como pandas ewm(span = n, adjust = False, min_periods = n): arranca en el primer dato válido
+function macdEma(xs, n) {
+  const a = 2 / (n + 1), out = Array(xs.length).fill(null);
+  let e = null, cnt = 0;
+  for (let i = 0; i < xs.length; i++) {
+    const x = xs[i];
+    if (x == null) continue;
+    e = e == null ? x : a * x + (1 - a) * e;
+    if (++cnt >= n) out[i] = e;
+  }
+  return out;
+}
+
+function macdCalc(closes, preset) {
+  const [f, sl, g] = preset.split("/").map(Number);
+  const ef = macdEma(closes, f), es = macdEma(closes, sl);
+  const macd = closes.map((_, i) => (ef[i] == null || es[i] == null ? null : ef[i] - es[i]));
+  const signal = macdEma(macd, g);
+  return { macd, signal, hist: macd.map((m, i) => (m == null || signal[i] == null ? null : m - signal[i])) };
+}
+
+// MACD de las velas cerradas (una vez por juego de datos y parámetros). El 12/26/9 es el del servidor, que lo calcula
+// con toda la historia: en el navegador las EMA arrancan con la primera vela cargada y difieren en las primeras ~100
+function macdSeries(c, preset) {
+  c._macd = c._macd || {};
+  if (!c._macd[preset]) c._macd[preset] = preset === "12/26/9" && c.macd_hist
+    ? { macd: c.macd, signal: c.macd_signal, hist: c.macd_hist } : macdCalc(c.close, preset);
+  return c._macd[preset];
+}
 
 // Forma de cada vela, en fracción de su apertura (se calcula una vez por juego de datos)
 function ghostShapes(c) {
@@ -1198,19 +1250,19 @@ function ghostMean(rows) {
   return { body: avg("body"), up: avg("up"), lo: avg("lo") };
 }
 
-// Últimos dos valores del MACD antes de la posición end (velas que trae el servidor; la EMA no mira adelante)
-function ghostMacd(c, end = c.t.length) {
+// Últimos dos valores del MACD antes de la posición end (la EMA no mira adelante)
+function ghostMacd(mc, end) {
   let i = end - 1;
-  while (i > 0 && (c.macd_hist[i] == null || c.macd[i] == null)) i--;
-  if (i < 1 || c.macd_hist[i - 1] == null) return null;
-  return { macd: c.macd[i], hist: c.macd_hist[i], prev: c.macd_hist[i - 1] };
+  while (i > 0 && (mc.hist[i] == null || mc.macd[i] == null)) i--;
+  if (i < 1 || mc.hist[i - 1] == null) return null;
+  return { macd: mc.macd[i], hist: mc.hist[i], prev: mc.hist[i - 1] };
 }
 
-// Direcciones de las 3 velas y tamaño promedio según el modo
-function ghostPlan(mode, rows, liveDir, c, end) {
+// Direcciones de las 3 velas y tamaño promedio según el modo; mc = MACD y mEnd = hasta dónde mirarlo
+function ghostPlan(mode, rows, liveDir, mc, mEnd) {
   const all = ghostMean(rows), lastDir = rows[rows.length - 1].dir || 1;
   if (mode === "d") {
-    const k = c.macd && c.macd_hist ? ghostMacd(c, end) : null;
+    const k = mc ? ghostMacd(mc, mEnd) : null;
     if (!k) return null;
     const T = Math.sign(k.macd) || Math.sign(k.hist) || lastDir;
     const favor = Math.sign(k.hist) === T, grows = Math.abs(k.hist) > Math.abs(k.prev);
@@ -1243,7 +1295,7 @@ function setGhosts() {
   const c = current.data.candles;
   ghost.info = {};
   if (!S.ghost_a) return;
-  let end, base, price, liveDir, k = null;
+  let end, base, price, liveDir, mc = null, mEnd, k = null;
   if (gt.on) {
     // Prueba en la historia: la vela elegida hace de última cerrada y se mira solo lo anterior
     k = c && c.t.length ? gtIndex(c) : null;
@@ -1251,6 +1303,8 @@ function setGhosts() {
     base = k == null ? null : c.t[k];
     price = k == null ? null : c.close[k];
     liveDir = 0;
+    mc = c ? macdSeries(c, ghost.macd) : null;
+    mEnd = end;
   } else {
     // Se dibujan después de la vela en curso (la del WebSocket) o, sin conexión, de la última cerrada
     const t0 = c && c.t.length ? c.t[c.t.length - 1] : null;
@@ -1259,11 +1313,18 @@ function setGhosts() {
     base = b ? b.time : t0;
     price = b ? b.close : c && c.close[c.close.length - 1];
     liveDir = b ? Math.sign(b.close - b.open) : 0;
+    // El MACD del modo d incluye la vela en curso (cambia hasta que cierra, como en cualquier gráfico)
+    if (c && ghost.modes.has("d")) {
+      const closes = c.close.slice();
+      if (b) b.time === t0 ? (closes[closes.length - 1] = b.close) : closes.push(b.close);
+      mc = macdCalc(closes, ghost.macd);
+      mEnd = closes.length;
+    }
   }
   const rows = end ? ghostRows(c, ghost.n, end) : [];
   for (const m of Object.keys(GHOST_COLORS)) {
     if (!ghost.modes.has(m) || !rows.length || price == null) { S["ghost_" + m].setData([]); continue; }
-    const plan = ghostPlan(m, rows, liveDir, c, end);
+    const plan = ghostPlan(m, rows, liveDir, mc, mEnd);
     if (!plan) { S["ghost_" + m].setData([]); continue; }
     const { dirs, size, note } = plan;
     const bars = [];
@@ -1277,7 +1338,7 @@ function setGhosts() {
       open = close;
     });
     S["ghost_" + m].setData(bars);
-    ghost.info[m] = { dirs, size, price, end: open, n: rows.length, note };
+    ghost.info[m] = { dirs, size, price, end: open, n: rows.length, note: m === "d" ? `${ghost.macd}, ${note}` : note };
     if (k != null) {
       const idx = [1, 2, 3].map((j) => k + j).filter((i) => i < c.t.length);
       const real = idx.map((i) => Math.sign(c.close[i] - c.open[i]));
@@ -1404,6 +1465,7 @@ function gtCalibrate() {
     }
     a.err.push(Math.abs(pred - realEnd) / base);
   };
+  const mc = macdSeries(c, ghost.macd);
   let cases = 0;
   for (let k = lo; k <= hi; k++) {
     const base = c.close[k], realEnd = c.close[k + GHOST_BARS];
@@ -1415,7 +1477,7 @@ function gtCalibrate() {
       const rows = ghostRows(c, n, k + 1);
       if (!rows.length) continue;
       for (const m of Object.keys(GHOST_COLORS)) {
-        const plan = ghostPlan(m, rows, 0, c, k + 1);
+        const plan = ghostPlan(m, rows, 0, mc, k + 1);
         if (!plan) continue;
         const pred = ghostEnd(base, plan);
         add(m, n, plan.dirs, pred, real, base, realEnd);
@@ -1429,6 +1491,7 @@ function gtCalibrate() {
   if (!cases) {
     table.innerHTML = `<tbody><tr><td class="muted">No hay velas para medir en este tramo: alejá el gráfico`
       + ` (hacen falta 50 velas antes y 3 después de cada una).</td></tr></tbody>`;
+    document.getElementById("gt-macd").innerHTML = "";
     return;
   }
 
@@ -1477,6 +1540,79 @@ function gtCalibrate() {
       + (m === "d" ? GT_PHASES.map((ph) => row(ph, "d:" + ph, "d", true)).join("") : "")).join("")
     + row("siempre ▲", "up") + row("precio quieto", "flat")
     + "</tbody>";
+  gtMacdTable(c, lo, hi, median, p0, p2);
+}
+
+// Qué parámetros del MACD convienen al modo d: aciertos (con el N elegido) y cuántas velas tarda en enterarse de
+// un giro. Giro = el cierre más alto (o más bajo) de las GT_PIVOT velas de cada lado; se entera cuando la primera
+// vela posible apunta para el lado nuevo. Si no se enteró en GT_LATE velas, cuenta como tarde.
+const GT_PIVOT = 5, GT_LATE = 20;
+function gtMacdTable(c, lo, hi, median, p0, p2) {
+  const len = c.t.length, rowsCache = new Map();
+  const rowsAt = (k) => rowsCache.get(k) || (rowsCache.set(k, ghostRows(c, ghost.n, k + 1)), rowsCache.get(k));
+  // Giros del tramo (confirmados con velas de después: eso solo sirve para medir)
+  const pivots = [];
+  for (let p = Math.max(lo, GT_PIVOT); p <= Math.min(hi, len - 1 - GT_PIVOT); p++) {
+    let top = true, bot = true;
+    for (let j = p - GT_PIVOT; j <= p + GT_PIVOT; j++) {
+      if (j === p) continue;
+      if (c.close[j] >= c.close[p]) top = false;
+      if (c.close[j] <= c.close[p]) bot = false;
+    }
+    if (top || bot) pivots.push({ p, dir: top ? -1 : 1 });
+  }
+  const res = Object.keys(MACD_PRESETS).map((preset) => {
+    const mc = macdSeries(c, preset);
+    const plans = new Map();
+    const planAt = (k) => {
+      if (!plans.has(k)) { const r = rowsAt(k); plans.set(k, r.length ? ghostPlan("d", r, 0, mc, k + 1) : null); }
+      return plans.get(k);
+    };
+    let n = 0, hit = 0, tot = 0, all = 0, flips = 0, prev = 0;
+    const err = [];
+    for (let k = lo; k <= hi; k++) {
+      const plan = planAt(k), base = c.close[k], realEnd = c.close[k + GHOST_BARS];
+      if (!plan || base == null || realEnd == null) continue;
+      const real = [1, 2, 3].map((j) => Math.sign(c.close[k + j] - c.open[k + j]));
+      n++;
+      let h = 0;
+      real.forEach((d, j) => { if (d) { tot++; if (d === plan.dirs[j]) { hit++; h++; } } });
+      if (h === GHOST_BARS) all++;
+      err.push(Math.abs(ghostEnd(base, plan) - realEnd) / base);
+      if (prev && plan.dirs[0] !== prev) flips++;
+      prev = plan.dirs[0];
+    }
+    const delays = [];
+    let late = 0;
+    for (const { p, dir } of pivots) {
+      let d = null;
+      for (let k = p; k <= Math.min(len - 1, p + GT_LATE); k++) {
+        const plan = planAt(k);
+        if (plan && plan.dirs[0] === dir) { d = k - p; break; }
+      }
+      if (d == null) late++; else delays.push(d);
+    }
+    return { preset, n, bars: tot ? hit / tot : null, all: n ? all / n : null, err: err.length ? median(err) : null,
+      delay: delays.length ? delays.reduce((a, x) => a + x, 0) / delays.length : null, late: pivots.length ? late / pivots.length : null,
+      flips: n ? flips / n * 100 : null };
+  });
+  const best = (f, sign) => Math.max(...res.filter((r) => r[f] != null).map((r) => r[f] * sign)) * sign;
+  const b = { bars: best("bars", 1), all: best("all", 1), err: best("err", -1), delay: best("delay", -1), late: best("late", -1) };
+  const cell = (r, f, txt) => `<td class="num${r[f] != null && r[f] === b[f] ? " best" : ""}${r.preset === ghost.macd ? " cur" : ""}"`
+    + ` data-preset="${r.preset}">${txt}</td>`;
+  const v = (x) => x == null ? "–" : nf(1).format(x);
+  document.getElementById("gt-macd").innerHTML = `<caption class="muted" style="text-align:left;padding:4px 0">`
+    + `Parámetros del MACD para el modo d (N = ${ghost.n}): ${nf(0).format(pivots.length)} giros en el tramo `
+    + `(cierre más alto o más bajo de ${GT_PIVOT} velas a cada lado)</caption>`
+    + `<thead><tr><th>MACD</th><th class="num">velas</th><th class="num">3 de 3</th><th class="num">error</th>`
+    + `<th class="num" title="Promedio de velas desde el giro hasta que la primera vela posible apunta para el lado nuevo">se entera del giro</th>`
+    + `<th class="num" title="Giros en los que no se enteró en ${GT_LATE} velas">no se entera</th>`
+    + `<th class="num" title="Cada 100 velas, cuántas veces cambia la dirección de la primera vela posible">cambios de idea</th></tr></thead><tbody>`
+    + res.map((r) => `<tr><td data-preset="${r.preset}" style="cursor:pointer">${r.preset}${MACD_PRESETS[r.preset] ? ` <span class="muted">${MACD_PRESETS[r.preset]}</span>` : ""}</td>`
+      + cell(r, "bars", p0(r.bars)) + cell(r, "all", p0(r.all)) + cell(r, "err", p2(r.err))
+      + cell(r, "delay", r.delay == null ? "–" : `${v(r.delay)} velas`) + cell(r, "late", p0(r.late))
+      + `<td class="num${r.preset === ghost.macd ? " cur" : ""}" data-preset="${r.preset}">${v(r.flips)}</td></tr>`).join("")
+    + "</tbody>";
 }
 
 document.getElementById("gt-btn").addEventListener("click", () => gtSet(!gt.on));
@@ -1484,6 +1620,10 @@ document.getElementById("gt-close").addEventListener("click", () => gtSet(false)
 document.getElementById("gt-prev").addEventListener("click", () => gtMove(-1));
 document.getElementById("gt-next").addEventListener("click", () => gtMove(1));
 document.getElementById("gt-range").addEventListener("change", (ev) => { gt.range = ev.target.value; gtCalibrate(); });
+document.getElementById("gt-macd").addEventListener("click", (ev) => {
+  const td = ev.target.closest("[data-preset]");
+  if (td) setMacdPreset(td.dataset.preset);
+});
 document.getElementById("gt-table").addEventListener("click", (ev) => {
   const td = ev.target.closest("td[data-n]");
   if (!td) return;
