@@ -132,14 +132,14 @@ systemctl --user disable --now cripto-dashboard  # desinstalar
   después de la vela en curso, con el cuerpo y las sombras promedio de las últimas N velas cerradas (en % de la
   apertura); cada una abre donde cerró la anterior. Dirección: **a** la de la mayoría de las N velas; **b** el signo
   de la suma de los cuerpos, con el tamaño de las velas de ese lado; **c** alterna empezando contra la vela en curso;
-  **d** según el MACD 12/26/9 del timeframe a la vista (línea MACD vs 0 = tendencia; histograma a favor/en contra y
+  **d** según el MACD (5/13/5 por defecto) del timeframe a la vista (línea MACD vs 0 = tendencia; histograma a favor/en contra y
   creciendo/achicándose = impulso TTT, pierde fuerza TT−T, corrección −T−TT, corrección terminando −TTT).
   No predicen: muestran el tamaño típico de las próximas velas. Se calcula en el navegador.
   *Probar en la historia*: se elige una vela del pasado (click, ◀ ▶ o flechas) y las velas posibles se calculan solo
   con lo anterior, dibujadas sobre las 3 reales; una tabla mide cada modo, cada fase del MACD y cada N con todas las
   velas del tramo a la vista (o todas las cargadas): acierto por vela, 3 de 3 y mediana del error del cierre, contra
   "siempre ▲" y "precio quieto". Medido en 1h/4h/1d (oct. 2026): 47–51 % por vela y 9–14 % las tres, como al azar.
-  El MACD del modo d se calcula en el navegador con la vela en curso y parámetros elegibles (12/26/9, 8/21/5, 8/17/9,
+  El MACD del modo d se calcula en el navegador con la vela en curso y parámetros elegibles (5/13/5 por defecto; 12/26/9, 8/21/5, 8/17/9,
   5/35/5, 5/13/5, 3/10/16; el panel del MACD los sigue). En la prueba, una segunda tabla mide por parámetros cuántas
   velas tarda en enterarse de un giro (pivote de 5 velas por lado), los giros que se pierde y los cambios de idea:
   5/13/5 ~3 velas y ningún giro perdido contra ~4,7 velas del 12/26/9, con el doble de cambios y los mismos aciertos.

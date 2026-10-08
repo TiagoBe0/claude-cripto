@@ -866,7 +866,7 @@ function setFunding(d) {
   S.funding.setData(pts);
 }
 
-// Panel del MACD con los parámetros elegidos en las velas posibles (12/26/9 por defecto)
+// Panel del MACD con los parámetros elegidos en las velas posibles (5/13/5 por defecto)
 function setMacdHist(c) {
   const t = theme(), m = macdSeries(c, ghost.macd);
   const pts = [];
@@ -1147,7 +1147,7 @@ function projLabel() {
 //   b momentum: el signo de la suma de los cuerpos; tamaño promedio solo de las velas de esa dirección.
 //   c neutral:  alterna empezando contra la vela en curso (el precio oscila); tamaño promedio de todas.
 //   d MACD:     según el MACD del timeframe a la vista (por eso 1w y 4h pueden dar cosas distintas), calculado en el
-//               navegador con la vela en curso y los parámetros elegidos (12/26/9 por defecto; más cortos = se entera
+//               navegador con la vela en curso y los parámetros elegidos (5/13/5 por defecto: se entera antes del giro que el 12/26/9
 //               antes del giro); la línea MACD da la tendencia T (arriba de 0 = sube) y el histograma la fase; tamaño de todas:
 //                 histograma a favor de T y creciendo   → impulso:                T T T
 //                 a favor de T pero achicándose         → impulso perdiendo fuerza: T T −T
@@ -1158,13 +1158,14 @@ const GHOST_COLORS = { a: "#f2c200", b: "#ff8a00", c: "#a8c400", d: "#26c6da" };
 const GHOST_NAMES = { a: "mayoría", b: "momentum", c: "neutral", d: "MACD" };
 const GHOST_BARS = 3;
 // Parámetros del MACD (rápida/lenta/señal): el clásico y otros más rápidos que se usan en cripto
+// Por defecto 5/13/5: en la historia se entera de un giro en ~3 velas contra ~4,7 del 12/26/9 (mismos aciertos)
 const MACD_PRESETS = { "12/26/9": "clásico", "8/21/5": "", "8/17/9": "", "5/35/5": "", "5/13/5": "rápido", "3/10/16": "Raschke" };
-const ghost = { modes: new Set(["b"]), n: 20, macd: "12/26/9", info: {} };
+const ghost = { modes: new Set(["b"]), n: 20, macd: "5/13/5", info: {} };
 try {
   const m = localStorage.getItem("ghost-modes");
   if (m != null) ghost.modes = new Set([...m].filter((x) => x in GHOST_COLORS));
   const n = +localStorage.getItem("ghost-n"); if ([10, 20, 50].includes(n)) ghost.n = n;
-  const p = localStorage.getItem("ghost-macd"); if (p in MACD_PRESETS) ghost.macd = p;
+  const p = localStorage.getItem("ghost-macd-2"); if (p in MACD_PRESETS) ghost.macd = p;
 } catch (e) { /* sin storage: valores por defecto */ }
 document.querySelectorAll("[data-ghost]").forEach((el) => {
   el.checked = ghost.modes.has(el.dataset.ghost);
@@ -1192,7 +1193,7 @@ macdSel.addEventListener("change", (ev) => setMacdPreset(ev.target.value));
 function setMacdPreset(p) {
   ghost.macd = p;
   macdSel.value = p;
-  try { localStorage.setItem("ghost-macd", p); } catch (e) { /* nada */ }
+  try { localStorage.setItem("ghost-macd-2", p); } catch (e) { /* nada */ }
   if (current.data.candles) setMacdHist(current.data.candles);
   setGhosts();
   if (gt.on) gtCalibrate();
