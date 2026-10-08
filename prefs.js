@@ -4,7 +4,7 @@
 // configuración del servidor antes de que se lean los ajustes; el pedido es síncrono a propósito (es el mismo
 // servidor que acaba de mandar la página y son pocos bytes). Solo viajan las claves de PREF_KEYS: el dominio es
 // compartido con otras páginas y lo de ellas no se toca.
-const PREF_KEYS = ["panes", "overlays", "strat", "proj", "proj-bars", "liq", "vp", "vp-source",
+const PREF_KEYS = ["panes", "overlays", "strat", "proj", "proj-bars", "liq", "fib", "fib-bars", "vp", "vp-source",
   "ghost-modes", "ghost-n", "ghost-macd-2", "tf", "views", "gt", "liqmap"];
 const PREFS_URL = "config", PREFS_CLAVE = "panel-clave";
 const prefs = { clave: null, state: "local", timer: 0 };

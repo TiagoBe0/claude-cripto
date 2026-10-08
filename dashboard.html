@@ -349,6 +349,10 @@
         <option value="both">spot + perp</option><option value="spot">spot</option><option value="perp">perp</option>
       </select></label>
     <label class="toggle"><input type="checkbox" id="liq-toggle" checked> Mapa de liquidez</label>
+    <label class="toggle" title="Retrocesos de Fibonacci del último tramo: entre el máximo y el mínimo de las últimas N velas cerradas (la dirección es la del extremo más reciente). Son niveles de referencia, no predicen"><input type="checkbox" id="fib-toggle"> Fibonacci
+      <select id="fib-bars" aria-label="Velas del tramo">
+        <option value="50">50 velas</option><option value="100">100 velas</option><option value="200">200 velas</option><option value="500">500 velas</option>
+      </select></label>
     <label class="toggle" title="SMA 50 y 200 hacia adelante: la parte de la ventana que ya pasó es exacta; el resto supone el precio quieto (línea) o moviéndose ±1 desvío típico (rango)"><input type="checkbox" id="proj-toggle" checked> Proyectar medias
       <select id="proj-bars" aria-label="Velas a proyectar">
         <option value="10">10 velas</option><option value="20">20 velas</option><option value="50">50 velas</option>
@@ -729,7 +733,7 @@ function savedView(c, tf) {
 function rebuildChart() {
   const lr = chart.timeScale().getVisibleLogicalRange();
   chart.remove();
-  S = {}; strategyLine = null; liq.lines = []; liq.key = ""; vp.key = "";
+  S = {}; strategyLine = null; liq.lines = []; fib.lines = []; liq.key = ""; vp.key = "";
   document.getElementById("labels").innerHTML = "";
   buildChart();
   if (current.data.candles) {
@@ -738,6 +742,7 @@ function rebuildChart() {
   }
   if (current.status) setStrategyLine(current.status.strategy);
   setLiquidityLines();
+  setFibonacci();
 }
 
 function buildChart() {
@@ -912,6 +917,7 @@ function applyTheme() {
   if (current.data.candles) setMacdHist(current.data.candles);
   if (current.status) setStrategyLine(current.status.strategy);
   setLiquidityLines(); liq.key = ""; vp.key = "";
+  setFibonacci();
   renderLabels();
 }
 
@@ -2174,6 +2180,59 @@ function renderRegime(r) {
     + `y |t| ≥ 2, contando días separados al menos el horizonte. Es una descripción del pasado, no una señal: lo que funcionó puede dejar de funcionar.</p>`;
 }
 
+// ---------- retrocesos de Fibonacci ----------
+// Tramo = máximo y mínimo de las últimas N velas cerradas. Si el máximo es más reciente que el mínimo el tramo es
+// alcista y los niveles se miden desde el máximo hacia abajo (retroceso del avance); si no, desde el mínimo hacia
+// arriba. 0 % = el extremo más reciente, 100 % = el origen del tramo. Son referencias, no predicciones.
+const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+const fib = { on: false, bars: 100, lines: [], info: null };
+try {
+  const v = localStorage.getItem("fib"); if (v != null) fib.on = v !== "0";
+  const b = +localStorage.getItem("fib-bars"); if ([50, 100, 200, 500].includes(b)) fib.bars = b;
+} catch (e) { /* sin storage: valores por defecto */ }
+document.getElementById("fib-toggle").checked = fib.on;
+document.getElementById("fib-bars").value = String(fib.bars);
+document.getElementById("fib-toggle").addEventListener("change", (ev) => {
+  fib.on = ev.target.checked;
+  try { prefSet("fib", fib.on ? "1" : "0"); } catch (e) { /* nada */ }
+  setFibonacci();
+});
+document.getElementById("fib-bars").addEventListener("change", (ev) => {
+  fib.bars = +ev.target.value;
+  try { prefSet("fib-bars", String(fib.bars)); } catch (e) { /* nada */ }
+  setFibonacci();
+});
+
+function setFibonacci() {
+  if (!S.candles) return;
+  for (const l of fib.lines) S.candles.removePriceLine(l);
+  fib.lines = []; fib.info = null;
+  const c = current.data && current.data.candles;
+  if (fib.on && c && c.t.length >= 3) {
+    const from = Math.max(0, c.t.length - fib.bars);
+    let hi = from, lo = from;
+    for (let i = from; i < c.t.length; i++) {
+      if (c.high[i] >= c.high[hi]) hi = i;
+      if (c.low[i] <= c.low[lo]) lo = i;
+    }
+    const top = c.high[hi], bot = c.low[lo], span = top - bot;
+    if (span > 0) {
+      const up = hi > lo;
+      const gold = "#f2c200";
+      for (const r of FIB_LEVELS) {
+        const price = up ? top - span * r : bot + span * r;
+        const edge = r === 0 || r === 1, key = r === 0.618 || r === 0.5;
+        fib.lines.push(S.candles.createPriceLine({
+          price, color: edge ? theme().muted : gold, lineWidth: key ? 2 : 1,
+          lineStyle: edge ? LWC.LineStyle.Solid : key ? LWC.LineStyle.Dashed : LWC.LineStyle.Dotted,
+          axisLabelVisible: true, title: MOBILE ? "" : `Fib ${nf(1).format(r * 100)} %` }));
+      }
+      fib.info = { up, top, bot, bars: c.t.length - from };
+    }
+  }
+  if (MOBILE) renderLabels();
+}
+
 // ---------- mapa de liquidez sobre el panel de precio ----------
 // Barras: liquidaciones ESTIMADAS por tramo de 0,5 % (modelo sobre el OI de Binance), dibujadas en un
 // canvas alineado con la escala de precios. Líneas: máximos/mínimos sin barrer y muros del libro.
@@ -2932,6 +2991,7 @@ async function load(tf, keepView) {
     renderPerformance();
     setStrategyLine(st.strategy);
     setLiquidityLines();
+    setFibonacci();
     renderStatus(st);
   } catch (e) {
     document.getElementById("updated").textContent = "Error cargando datos: " + e.message;
