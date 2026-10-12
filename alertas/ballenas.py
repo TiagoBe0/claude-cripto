@@ -137,14 +137,14 @@ def run() -> None:
     # notify() pasa por acá: cuenta los correos del día y corta al llegar al tope
     notify = est.notify
 
-    def capped(key, kind, subject, text):
+    def capped(key, kind, subject, text, tf="1h"):
         if est.seen(key):
             return False
         if not under_daily_cap(est):
             est.data["sent"][key] = int(time.time())
             mailer._record(kind, subject, text, False, "tope diario de avisos de ballenas")
             return False
-        sent = notify(key, kind, subject, text)
+        sent = notify(key, kind, subject, text, tf)
         if sent:
             est.get("ballenas_day")["sent"] += 1
         return sent

@@ -83,7 +83,7 @@ def check_candles(est: Estado) -> None:
                 "",
                 f"Panel: {PANEL}#{tf}",
             ])
-            est.notify(key, kind, subject, text)
+            est.notify(key, kind, subject, text, tf)
 
 
 def check_strategy(est: Estado) -> None:

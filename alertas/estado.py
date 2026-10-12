@@ -47,7 +47,7 @@ class Estado:
     def set(self, key: str, value) -> None:
         self.data[key] = value
 
-    def notify(self, key: str, kind: str, subject: str, text: str) -> bool:
+    def notify(self, key: str, kind: str, subject: str, text: str, tf: str = "4h") -> bool:
         """Avisa una vez por clave. Pasado el tope por hora, lo marca como visto y solo lo registra."""
         if self.seen(key):
             return False
@@ -58,7 +58,7 @@ class Estado:
             mailer._record(kind, subject, text, False, "tope de correos por hora")
             return False
         # solo cuenta para el tope lo que salió de verdad: sin SMTP o con un error no gasta cupo
-        sent = mailer.send(kind, subject, text)
+        sent = mailer.send(kind, subject, text, tf)
         if sent:
             self.data["recent"].append(int(now))
         return sent

@@ -7,4 +7,7 @@
 - velas.py    cada hora, después de la extracción: patrones de velas 4h y 1d, cruces de medias 1d,
               orden de la estrategia C y cuando la cobertura sugerida se activa o se apaga.
 - ballenas.py cada minuto (cron): órdenes >= US$ 1 M y neto de ballenas de 15 min >= US$ 5 M.
+- adjuntos.py contexto de mercado en texto (RSI, MACD, funding, OI, libro, liquidaciones, ballenas, niveles)
+              y gráficos PNG dentro del correo: velas con RSI y MACD, pulso de 24 h, mapa de liquidez,
+              mapa de calor de liquidaciones (7 d) y del libro (6 h). Necesita matplotlib.
 """
