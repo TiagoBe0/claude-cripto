@@ -54,6 +54,10 @@ def signals(c: pd.DataFrame) -> dict[str, tuple[pd.Series, int]]:
         "Cruce de la muerte SMA50 < SMA200": (~above & above.shift(fill_value=False), -1),
         "Cierre cruza arriba de SMA200": ((cl > sma200) & (pc <= sma200.shift()), 1),
         "Cierre cruza abajo de SMA200": ((cl < sma200) & (pc >= sma200.shift()), -1),
+        "Cierre cruza arriba de SMA50": ((cl > sma50) & (pc <= sma50.shift()), 1),
+        "Cierre cruza abajo de SMA50": ((cl < sma50) & (pc >= sma50.shift()), -1),
+        # el mínimo perfora la SMA50 y la vela cierra arriba, viniendo de arriba: la media aguantó como soporte
+        "Mecha bajo SMA50 y cierre arriba": ((l < sma50) & (cl > sma50) & (pc > sma50.shift()), 1),
         "Envolvente alcista": ((pc < po) & (cl > o) & (o <= pc) & (cl >= po) & down_before, 1),
         "Envolvente bajista": ((pc > po) & (cl < o) & (o >= pc) & (cl <= po) & up_before, -1),
         "Martillo": ((lower >= 2 * body) & (upper <= 0.25 * rng) & (body >= 0.05 * rng) & down_before, 1),

@@ -1,5 +1,5 @@
-"""Avisos al cierre de vela: patrones de velas (4h y 1d), cruces de medias (1d), orden de la estrategia C y
-cambios de la cobertura sugerida (ronda 8).
+"""Avisos al cierre de vela: patrones de velas (4h y 1d), cruces de medias (1d), orden de la estrategia C,
+cambios de la cobertura sugerida (ronda 8) y el resumen diario (alertas/resumen.py).
 
 Uso (lo llama binance_extract.py al final de cada corrida si "alerts" está en la config):
     python -m alertas.velas
@@ -7,6 +7,9 @@ Uso (lo llama binance_extract.py al final de cada corrida si "alerts" está en l
 Las señales salen de estrategia/eventos.py, las mismas que mide el estudio de eventos, y cada correo
 trae lo que dio esa señal en el backtest. Ninguna de estas señales mostró ventaja en los dos períodos:
 el correo lo dice, para que el aviso se lea como "mirá el gráfico" y no como "comprá".
+
+Los patrones con |t| fuera de muestra < T_MIN no salen sueltos: van al resumen del día (eran la mayor parte de la
+bandeja y su backtest da exceso ~0). Los cruces de medias diarios salen siempre: son pocos y marcan niveles.
 """
 
 import json
@@ -15,17 +18,21 @@ from pathlib import Path
 
 import pandas as pd
 
-from alertas import mailer
+from alertas import mailer, resumen
 from alertas.estado import Estado
 from estrategia import eventos
 
 DATA = mailer.ROOT / "data"
 PANEL = "https://malbecmotion.com/sbs/btc/"
 CROSSES = {"Cruce dorado SMA50 > SMA200", "Cruce de la muerte SMA50 < SMA200",
-           "Cierre cruza arriba de SMA200", "Cierre cruza abajo de SMA200"}
-# Qué señales se avisan en cada timeframe: los cruces solo en diario (en 4h son ruido frecuente)
-WATCH = {"4h": lambda name: name not in CROSSES, "1d": lambda name: True}
+           "Cierre cruza arriba de SMA200", "Cierre cruza abajo de SMA200",
+           "Cierre cruza arriba de SMA50", "Cierre cruza abajo de SMA50"}
+DAILY_ONLY = CROSSES | {"Mecha bajo SMA50 y cierre arriba"}
+# Qué señales se avisan en cada timeframe: las de medias solo en diario (en 4h son ruido frecuente)
+WATCH = {"4h": lambda name: name not in DAILY_ONLY, "1d": lambda name: True}
 STUDY_DAYS = 3
+T_MIN = 2.0
+OOS = "OOS 2023-hoy"
 
 log = logging.getLogger("alertas.velas")
 
@@ -45,9 +52,12 @@ def closed_frames() -> dict[str, pd.DataFrame]:
     return frames
 
 
-def backtest_line(c: pd.DataFrame, tf: str, name: str) -> str:
+def backtest(c: pd.DataFrame, tf: str, name: str) -> pd.DataFrame:
     res = eventos.study(c, tf)
-    r = res[(res["señal"] == name) & (res["días"] == STUDY_DAYS)].set_index("período")
+    return res[(res["señal"] == name) & (res["días"] == STUDY_DAYS)].set_index("período")
+
+
+def backtest_line(r: pd.DataFrame) -> str:
     sign = lambda x: ("+" if x >= 0 else "−") + ar(abs(x))  # noqa: E731
     parts = [f"{p}: {int(r.loc[p, 'n'])} casos, acierto {ar(r.loc[p, 'acierto %'], 0)} %, "
              f"exceso sobre una vela cualquiera {sign(r.loc[p, 'exceso %'])} % (t {ar(r.loc[p, 't'], 1)})"
@@ -65,6 +75,15 @@ def check_candles(est: Estado) -> None:
             if est.seen(key):
                 continue
             row = c.iloc[-1]
+            bt = backtest(c, tf, name)
+            t_oos = bt.loc[OOS, "t"] if OOS in bt.index else float("nan")
+            # sin ventaja: al resumen del día y no a la bandeja (t NaN = sin casos, también)
+            if name not in CROSSES and not abs(t_oos) >= T_MIN:
+                est.data["sent"][key] = int(pd.Timestamp.now(tz="UTC").timestamp())
+                resumen.queue("patron", f"{'▲' if direction > 0 else '▼'} {name} ({tf}) · vela del {last:%d/%m %H:%M} "
+                                        f"UTC · cierre {ar(row.close, 0)} · t fuera de muestra {'−' if t_oos < 0 else ''}{ar(abs(t_oos), 1)}")
+                continue
+            useful = ((bt["exceso %"] > 0) & (bt["t"] > T_MIN)).all() and len(bt) == 2
             sma50, sma200 = c.close.rolling(50).mean().iloc[-1], c.close.rolling(200).mean().iloc[-1]
             kind = "cruce" if name in CROSSES else "patron"
             arrow = "▲" if direction > 0 else "▼"
@@ -76,10 +95,12 @@ def check_candles(est: Estado) -> None:
                 f"Apertura {ar(row.open)} · máximo {ar(row.high)} · mínimo {ar(row.low)} · cierre {ar(row.close)}",
                 f"SMA 50 {ar(sma50)} · SMA 200 {ar(sma200)}",
                 "",
-                backtest_line(c, tf, name),
+                backtest_line(bt),
                 "",
-                "Esta señal NO mostró ventaja en los dos períodos del backtest (estrategia/eventos.py):",
-                "tomala como aviso para mirar el gráfico, no como orden de compra o venta.",
+                *(["Esta señal tuvo ventaja en los dos períodos del backtest (estrategia/eventos.py). Igual es una",
+                   "estadística, no una orden."] if useful else
+                  ["Esta señal NO mostró ventaja en los dos períodos del backtest (estrategia/eventos.py):",
+                   "tomala como aviso para mirar el gráfico, no como orden de compra o venta."]),
                 "",
                 f"Panel: {PANEL}#{tf}",
             ])
@@ -119,13 +140,33 @@ def check_strategy(est: Estado) -> None:
     est.notify(key, "estrategia", subject, text)
 
 
+def cobertura_status() -> list[str]:
+    """Estado de la cobertura para el resumen diario."""
+    path = DATA / "estrategia" / "cobertura.json"
+    if not path.exists():
+        return []
+    c = json.loads(path.read_text())
+    since = f"{pd.Timestamp(c['since_utc']):%d/%m %H:%M} UTC"
+    if not c["hedge"]:
+        return [f"  OFF desde el {since}: 100 % BTC spot. Percentil de P(movimiento) ahora {c['pctl']:.0f}."]
+    return [f"  ON desde el {since}: corto {c['hedge'] * 100:.0f} % en el perpetuo, hasta el "
+            f"{pd.Timestamp(c['until_utc']):%d/%m %H:%M} UTC si el modelo no vuelve a pasar el percentil {c['rules']['pctl']}."]
+
+
 def check_cobertura(est: Estado) -> None:
-    """Avisa cuando la cobertura sugerida se activa o se apaga (estrategia/cobertura.py)."""
+    """Avisa cuando la cobertura sugerida se activa o se apaga (estrategia/cobertura.py). Las extensiones de una
+    cobertura ya activa no mandan correo: van al resumen del día."""
     path = DATA / "estrategia" / "cobertura.json"
     if not path.exists():
         return
     c = json.loads(path.read_text())
     key = f"cobertura:{c['since_utc']}:{c['hedge']}"
+    until, prev = c.get("until_utc"), est.get("cobertura_until")
+    est.set("cobertura_until", until)
+    if c["hedge"] and est.seen(key) and prev and until and until > prev:
+        resumen.queue("cobertura", f"se extendió hasta el {pd.Timestamp(until):%d/%m %H:%M} UTC "
+                                   f"(antes {pd.Timestamp(prev):%d/%m %H:%M}): el modelo volvió a pasar el percentil "
+                                   f"{c['rules']['pctl']}")
     since = pd.Timestamp(c["since_utc"])
     pct = lambda x: f"{x * 100:.0f} %"  # noqa: E731
     if c["hedge"]:
@@ -159,11 +200,12 @@ def check_cobertura(est: Estado) -> None:
 def run() -> None:
     est = Estado("velas")
     try:
-        for fn in (check_candles, check_strategy, check_cobertura):
+        for fn in (check_candles, check_strategy, check_cobertura,
+                   lambda e: resumen.send_if_due(e, cobertura_status())):
             try:
                 fn(est)
             except Exception:  # noqa: BLE001 - una parte que falla no frena la otra
-                log.exception("alertas: falló %s", fn.__name__)
+                log.exception("alertas: falló %s", getattr(fn, "__name__", fn))
     finally:
         est.save()
 

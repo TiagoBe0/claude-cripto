@@ -56,3 +56,6 @@ chmod 600 ~/.config/claude-cripto/alertas.env
 
 Corren por cron (ver `crontab.txt`): `alertas.velas` a los :06 de cada hora, después del extractor, y
 `alertas.ballenas` cada minuto. Umbrales y su fundamento en el encabezado de cada archivo.
+`alertas.velas` manda además, en su primera corrida de cada día UTC (00:06), el resumen diario de `alertas/resumen.py`:
+patrones de velas sin ventaja, avisos de ballenas que no salieron por el tope, extensiones de la cobertura,
+niveles diarios y el próximo evento de `eventos_macro` en `config.json` (agregar ahí FOMC, CPI, etc.).

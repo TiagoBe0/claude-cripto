@@ -3,7 +3,11 @@
 - Orden suelta >= BIG_ORDER_USD en Binance spot, Binance perp o Coinbase.
 - Neto de ballenas (compras - ventas de órdenes >= US$ 100 mil) en los últimos 15 minutos
   >= NET_15M_USD, con una espera de NET_COOLDOWN_S entre avisos del mismo lado.
-- Como mucho MAX_PER_DAY correos de ballenas por día.
+- Como mucho MAX_PER_DAY[tipo] correos por día de órdenes sueltas y de netos, cada uno con su cupo: con un
+  cupo común las órdenes sueltas se lo gastaban y del 04/10 al 15/10 salieron 4 netos de 38. Lo que no sale va al
+  resumen diario (alertas/resumen.py). Un neto con lectura de absorción o agotamiento sale siempre.
+- Cada neto trae la lectura de alertas/lectura_ballenas.py: dónde está el precio en el rango, divergencia
+  perpetuo/spot, funding, takers y libro.
 
 Umbrales medidos el 2026-10-05 con el primer día de datos: el |neto de 15 min| tiene mediana
 US$ 7 M y percentil 99 de US$ 81 M (el perpetuo de Binance mueve decenas de millones por minuto).
@@ -28,14 +32,14 @@ import urllib.request
 
 import pandas as pd
 
-from alertas import mailer
+from alertas import lectura_ballenas, mailer, resumen
 from alertas.estado import Estado
 from alertas.velas import PANEL, ar
 
 DATA = mailer.ROOT / "data"
 BIG_ORDER_USD = 5_000_000
 NET_15M_USD = 100_000_000
-MAX_PER_DAY = 6
+MAX_PER_DAY = {"orden": 4, "neto": 6}
 NET_COOLDOWN_S = 3600
 MARKETS = ["binance_spot", "binance_perp", "coinbase"]
 NAMES = {"binance_spot": "Binance spot", "binance_perp": "Binance perpetuo", "coinbase": "Coinbase"}
@@ -88,7 +92,8 @@ def check_orders(est: Estado) -> None:
     lines += ["", "Una orden grande a mercado puede ser una ballena entrando o saliendo, un fondo cubriéndose o",
               "una liquidación. Todavía no hay historia para saber si anticipa algo: se está registrando.",
               "", f"Panel: {PANEL}"]
-    est.notify(f"ballena:orden:{int(big.timestamp.max())}:{int(big.usd.sum())}", "ballena", subject, "\n".join(lines))
+    est.notify(f"ballena:orden:{int(big.timestamp.max())}:{int(big.usd.sum())}", "ballena", subject, "\n".join(lines),
+               cap="orden")
 
 
 def check_net(est: Estado) -> None:
@@ -112,24 +117,38 @@ def check_net(est: Estado) -> None:
     by_market = {m: df[f"{m}_whale_buy_usd"].sum() - df[f"{m}_whale_sell_usd"].sum() for m in MARKETS}
     word = "COMPRANDO" if net > 0 else "VENDIENDO"
     subject = f"BTC 🐋 Ballenas {word}: neto {'+' if net > 0 else '−'}{money(abs(net))} en 15 min"
+    try:
+        at = pd.to_datetime(df.timestamp.iloc[-1] + 60_000, unit="ms", utc=True)
+        reading = lectura_ballenas.features(lectura_ballenas.load(DATA), at, by_market, p)
+    except Exception:  # noqa: BLE001 - sin lectura el aviso sale igual
+        log.exception("ballenas: sin lectura del neto")
+        reading = None
+    tag = reading["tag"] if reading else ""
+    if tag in lectura_ballenas.TITLES:
+        subject += f" · {lectura_ballenas.TITLES[tag]}"
+    elif reading:
+        subject += f" · {reading['zone']} del rango"
     lines = [f"En los últimos 15 minutos las órdenes a mercado de US$ 100 mil o más dieron un neto de "
              f"{'+' if net > 0 else '−'}{money(abs(net))}.", "",
              f"Compras {money(buy)} · ventas {money(sell)}", ""]
     lines += [f"  {NAMES[m]}: {'+' if v >= 0 else '−'}{money(abs(v))}" for m, v in by_market.items()]
     if p:
         lines += ["", f"Precio BTC ahora: {ar(p, 2)}"]
+    if reading:
+        lines += ["", *lectura_ballenas.text(reading)]
     lines += ["", f"No se repite este aviso del mismo lado durante {NET_COOLDOWN_S // 60} minutos.",
               "", f"Panel: {PANEL}"]
-    est.notify(f"ballena:neto:{side}:{int(df.timestamp.iloc[-1])}", "ballena", subject, "\n".join(lines))
+    est.notify(f"ballena:neto:{side}:{int(df.timestamp.iloc[-1])}", "ballena", subject, "\n".join(lines),
+               cap=None if tag in lectura_ballenas.TITLES else "neto")
 
 
-def under_daily_cap(est: Estado) -> bool:
+def day_count(est: Estado) -> dict:
     today = time.strftime("%Y-%m-%d", time.gmtime())
     day = est.get("ballenas_day", {})
-    if day.get("date") != today:
-        day = {"date": today, "sent": 0}
+    if day.get("date") != today or not isinstance(day.get("sent"), dict):
+        day = {"date": today, "sent": {k: 0 for k in MAX_PER_DAY}}
     est.set("ballenas_day", day)
-    return day["sent"] < MAX_PER_DAY
+    return day["sent"]
 
 
 def run() -> None:
@@ -137,16 +156,19 @@ def run() -> None:
     # notify() pasa por acá: cuenta los correos del día y corta al llegar al tope
     notify = est.notify
 
-    def capped(key, kind, subject, text, tf="1h"):
+    def capped(key, kind, subject, text, tf="1h", cap="orden"):
+        """cap: cupo diario que gasta ("orden" o "neto"); None = sale siempre."""
         if est.seen(key):
             return False
-        if not under_daily_cap(est):
+        sent_today = day_count(est)
+        if cap and sent_today[cap] >= MAX_PER_DAY[cap]:
             est.data["sent"][key] = int(time.time())
             mailer._record(kind, subject, text, False, "tope diario de avisos de ballenas")
+            resumen.queue("ballena", f"{time.strftime('%d/%m %H:%M', time.gmtime())} UTC · {subject.removeprefix('BTC 🐋 ')}")
             return False
         sent = notify(key, kind, subject, text, tf)
-        if sent:
-            est.get("ballenas_day")["sent"] += 1
+        if sent and cap:
+            sent_today[cap] += 1
         return sent
 
     est.notify = capped

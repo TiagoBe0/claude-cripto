@@ -24,7 +24,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from alertas import mailer
+from alertas import lectura_ballenas as lb, mailer
 
 DATA = mailer.ROOT / "data"
 DASH = DATA / "dashboard"
@@ -416,8 +416,16 @@ def context_text() -> str:
     section("Liquidez y flujo", flujo)
 
     def niveles():
-        liq = json.loads((DASH / "liquidity.json").read_text())
         out = []
+        try:
+            d1, h1 = _csv(f"{SYMBOL}_1d.csv"), _csv(f"{SYMBOL}_1h.csv", 50_000)
+            d1 = d1[d1.index > d1.index[-1] - pd.Timedelta(days=lb.RANGE_DAYS - 1)]
+            c = h1.close.iloc[-1]
+            lo, hi = min(d1.low.min(), h1.low.iloc[-24:].min()), max(d1.high.max(), h1.high.iloc[-24:].max())
+            out.append(f"  Rango de {lb.RANGE_DAYS} días {ar(lo, 0)} – {ar(hi, 0)}: precio al {ar((c - lo) / (hi - lo) * 100, 0)} % (0 = piso)")
+        except Exception as e:  # noqa: BLE001
+            log.info("contexto: sin rango (%s)", e)
+        liq = json.loads((DASH / "liquidity.json").read_text())
         price = liq["estimated"]["price"]
         bins = pd.DataFrame(liq["estimated"]["bins"])
         for side, word, cmp in (("short", "arriba (cortos)", bins.price > price), ("long", "abajo (largos)", bins.price < price)):

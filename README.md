@@ -318,6 +318,13 @@ systemctl --user status cripto-ballenas
 journalctl --user -u cripto-ballenas -f
 ```
 
+Avisos (`alertas/ballenas.py`): cada neto de 15 min ≥ US$ 100 M trae la lectura de `alertas/lectura_ballenas.py`
+(posición en el rango de 21 días, %B 4 h, divergencia perpetuo/spot, funding, takers y libro) y la etiqueta
+**posible absorción** cuando es una venta en el piso con el perpetuo vendiendo, el spot comprando y funding negativo.
+Es una hipótesis de pocos casos: `python -m investigacion.ballenas_neto` rearma todos los netos desde el
+2026-10-04 (también los que el tope dejó sin correo) y mide qué hizo el precio a 1, 4 y 24 h, por etiqueta
+(`data/research/ballenas_neto.csv`).
+
 ## Libro y actividad por minuto (`libro_1m.py`, `whale_trades_ws.py`)
 
 Para ver cuándo se retiran los market makers (bots de alta frecuencia), que no se ven directamente:
@@ -384,6 +391,8 @@ corto del 50 % en el perpetuo mientras en alguna de las últimas 24 h el percent
 
 Corriendo el paper desde el inicio del holdout reproduce exacto el resultado de la ronda 8 (−11,3 %, Sharpe −0,30).
 En el dashboard es la tarjeta "Cobertura sugerida" y `alertas/velas.py` manda un correo cuando se activa o se apaga.
+Si el modelo vuelve a pasar el percentil 80 mientras está activa, el "hasta" se corre sin correo y la extensión
+aparece en el resumen diario (`alertas/resumen.py`).
 Solo simula: no hay órdenes reales.
 
 ## Operar en Binance desde la consola (`trade.py`)
