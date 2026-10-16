@@ -34,6 +34,7 @@
     --ov-vol: #8d5a2b;
     --ov-fng: #607d8b;
     --strat: #6f4fd8;     /* estrategia 4h: EMA 1200, canal Donchian, curva de capital */
+    --bb: #00897b;        /* bandas de Bollinger */
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
@@ -60,6 +61,7 @@
       --ov-vol: #c99a6b;
       --ov-fng: #a0b4bf;
       --strat: #a08cff;
+      --bb: #4db6ac;
     }
   }
   :root[data-theme="dark"] {
@@ -86,6 +88,7 @@
     --ov-vol: #c99a6b;
     --ov-fng: #a0b4bf;
     --strat: #a08cff;
+    --bb: #4db6ac;
   }
 
   * { box-sizing: border-box; }
@@ -360,6 +363,7 @@
       <select id="fib-bars" aria-label="Velas del tramo">
         <option value="50">50 velas</option><option value="100">100 velas</option><option value="200">200 velas</option><option value="500">500 velas</option>
       </select></label>
+    <label class="toggle" title="Bandas de Bollinger (20, 2): media de 20 velas ± 2 desvíos de los cierres. La vela en curso entra con su precio en vivo. %B = dónde está el cierre entre la banda inferior (0) y la superior (1)"><input type="checkbox" id="bb-toggle"> Bollinger</label>
     <label class="toggle" title="SMA 50 y 200 hacia adelante: la parte de la ventana que ya pasó es exacta; el resto supone el precio quieto (línea) o moviéndose ±1 desvío típico (rango)"><input type="checkbox" id="proj-toggle" checked> Proyectar medias
       <select id="proj-bars" aria-label="Velas a proyectar">
         <option value="10">10 velas</option><option value="20">20 velas</option><option value="50">50 velas</option>
@@ -800,6 +804,11 @@ function buildChart() {
     S[k + "Hi"] = chart.addSeries(LWC.LineSeries, { ...quiet, lineWidth: 1, lineStyle: LWC.LineStyle.Dotted }, 0);
     S[k + "Lo"] = chart.addSeries(LWC.LineSeries, { ...quiet, lineWidth: 1, lineStyle: LWC.LineStyle.Dotted }, 0);
   }
+  // Bandas de Bollinger: bandas finas y la media de 20 punteada
+  for (const k of ["bbUp", "bbMid", "bbLo"]) {
+    S[k] = chart.addSeries(LWC.LineSeries, { ...quiet, lineWidth: 1,
+      ...(k === "bbMid" ? { lineStyle: LWC.LineStyle.Dotted } : {}) }, 0);
+  }
   // Velas posibles: una serie por modo, sin línea ni etiqueta de precio para no confundirlas con el precio real
   for (const m of Object.keys(GHOST_COLORS)) {
     S["ghost_" + m] = chart.addSeries(LWC.CandlestickSeries, { priceFormat: usd, priceLineVisible: false,
@@ -893,6 +902,9 @@ function applyTheme() {
     borderDownColor: t.down, wickUpColor: t.up, wickDownColor: t.down });
   S.sma50.applyOptions({ color: t.muted });
   S.sma200.applyOptions({ color: t.primary });
+  for (const k of ["bbUp", "bbMid", "bbLo"]) {
+    S[k].applyOptions({ color: k === "bbMid" ? alpha(css("--bb"), 0.7) : css("--bb"), visible: bb.on });
+  }
   for (const [k, color] of [["proj50", t.muted], ["proj200", t.primary]]) {
     S[k].applyOptions({ color, visible: proj.on });
     S[k + "Hi"].applyOptions({ color: alpha(color, 0.5), visible: proj.on });
@@ -1041,6 +1053,7 @@ function setChartData(data, keepView) {
   setGhosts();
   if (gt.on) gtSchedule();
   applyLiveBar();
+  setBollinger();
 
   if (prevRange && !atRightEdge) {
     ts.setVisibleRange(prevRange);
@@ -1065,6 +1078,7 @@ function valuesAt(param) {
   };
   return {
     c: pick(S.candles), s50: pick(S.sma50), s200: pick(S.sma200), v: pick(S.volume),
+    bbu: pick(S.bbUp), bbl: pick(S.bbLo),
     se: pick(S.stratEma), sd: pick(S.stratDon), ss: pick(S.stratStop),
     f: pick(S.funding), oi: pick(S.oi), top: pick(S.lsTop), glob: pick(S.lsGlobal),
     rsi: pick(S.rsi), mh: pick(S.macdHist), m: pick(S.macd), ms: pick(S.macdSignal),
@@ -1093,6 +1107,7 @@ function renderLabels(param) {
     price: `Precio spot ${c ? `A <b>${fmtPrice(c.open)}</b> M <b>${fmtPrice(c.high)}</b> m <b>${fmtPrice(c.low)}</b> C <b>${fmtPrice(c.close)}</b>` : ""}`
       + `${sw(t.muted, true)}SMA 50 <b>${fmtPrice(val(v.s50))}</b>${sw(t.primary)}SMA 200 <b>${fmtPrice(val(v.s200))}</b>`
       + projLabel()
+      + bbLabel(c, val(v.bbu), val(v.bbl))
       + ghostLabel()
       + (stratOn && current.data.candles && current.data.candles.strat_ema
         ? `<br>Estrategia 4h${sw(css("--strat"))}EMA 1200 <b>${fmtPrice(val(v.se))}</b>`
@@ -2211,6 +2226,60 @@ function renderRegime(r) {
     + `y |t| ≥ 2, contando días separados al menos el horizonte. Es una descripción del pasado, no una señal: lo que funcionó puede dejar de funcionar.</p>`;
 }
 
+// ---------- bandas de Bollinger ----------
+// SMA 20 ± 2 desvíos poblacionales de los cierres, igual que indicators.py (bb_upper, bb_lower, bb_pct_b). Se calculan
+// acá y no se mandan desde el servidor: así valen en todos los timeframes, también los que se arman agrupando, y
+// siguen a la vela en curso.
+const BB_N = 20, BB_K = 2;
+const bb = { on: false };
+try { const v = localStorage.getItem("bb"); if (v != null) bb.on = v !== "0"; } catch (e) { /* sin storage: apagado */ }
+document.getElementById("bb-toggle").checked = bb.on;
+document.getElementById("bb-toggle").addEventListener("change", (ev) => {
+  bb.on = ev.target.checked;
+  try { prefSet("bb", bb.on ? "1" : "0"); } catch (e) { /* nada */ }
+  if (!chart) return;
+  applyTheme(); setBollinger(); renderLabels();
+});
+
+// Banda de la ventana que termina en la vela i (null si no hay 20 velas)
+function bbAt(bars, i) {
+  if (i < BB_N - 1) return null;
+  let sum = 0, sq = 0;
+  for (let j = i - BB_N + 1; j <= i; j++) { sum += bars[j].close; sq += bars[j].close ** 2; }
+  const mid = sum / BB_N, sd = Math.sqrt(Math.max(0, sq / BB_N - mid * mid));
+  return { mid, up: mid + BB_K * sd, lo: mid - BB_K * sd };
+}
+
+function setBollinger() {
+  if (!S.bbUp) return;
+  const out = { bbUp: [], bbMid: [], bbLo: [] };
+  if (bb.on) {
+    const bars = S.candles.data();
+    for (let i = BB_N - 1; i < bars.length; i++) {
+      const b = bbAt(bars, i), time = bars[i].time;
+      out.bbUp.push({ time, value: b.up }); out.bbMid.push({ time, value: b.mid }); out.bbLo.push({ time, value: b.lo });
+    }
+  }
+  for (const k in out) S[k].setData(out[k]);
+}
+
+// Con cada precio en vivo solo cambia la última banda
+function updateBollingerLast() {
+  if (!bb.on || !S.bbUp) return;
+  const bars = S.candles.data(), b = bbAt(bars, bars.length - 1);
+  if (!b) return;
+  const time = bars[bars.length - 1].time;
+  S.bbUp.update({ time, value: b.up }); S.bbMid.update({ time, value: b.mid }); S.bbLo.update({ time, value: b.lo });
+}
+
+function bbLabel(c, up, lo) {
+  if (!bb.on || up == null || lo == null) return "";
+  const sw = `<span class="sw" style="border-top-color:${css("--bb")}"></span>`;
+  const pb = c && up > lo ? (c.close - lo) / (up - lo) : null;
+  return `${sw}Bollinger 20, 2 <b>${fmtPrice(up)}</b> / <b>${fmtPrice(lo)}</b>`
+    + (pb == null ? "" : ` · %B <b>${nf(2).format(pb)}</b>`);
+}
+
 // ---------- retrocesos de Fibonacci ----------
 // Tramo = máximo y mínimo de las últimas N velas cerradas. Si el máximo es más reciente que el mínimo el tramo es
 // alcista y los niveles se miden desde el máximo hacia abajo (retroceso del avance); si no, desde el mínimo hacia
@@ -3109,6 +3178,7 @@ function applyLiveBar() {
   S.volume.update({ time: b.time, value: b.volume });
   setProjection();
   setGhosts();
+  updateBollingerLast();
 }
 
 document.querySelectorAll(".seg button").forEach((b) => b.addEventListener("click", () => selectTf(b.dataset.tf)));
