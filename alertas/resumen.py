@@ -5,7 +5,8 @@
 - Cobertura: el estado de ahora y las extensiones del día (el correo ON dice "hasta", y si el modelo vuelve a
   esperar un movimiento grande se corre sin aviso; así pasó del 13/10 al 16/10 durante el CPI).
 - Niveles diarios: cierre contra la SMA 50 y posición en el rango de 21 días.
-- Próximo evento macro de "eventos_macro" en config.json.
+- Eventos macro de los próximos 7 días (o el próximo) de "eventos_macro" en config.json: FOMC, CPI, empleo y
+  PIB/PCE, con la hora en UTC. Las fechas salen de los calendarios de la Fed, BLS y BEA; los de 2027 son tentativos.
 
 Quien quiere mandar algo al resumen llama a queue(); velas.py lo manda con send_if_due() en su primera corrida de
 cada día UTC (00:06, después del cierre diario). La cola es un .jsonl con lock: ballenas.py escribe cada minuto.
@@ -71,10 +72,14 @@ def macro(cfg: dict) -> list[str]:
     nxt = [(t, n) for t, n in events if t > now]
     if not nxt:
         return ["  No hay eventos cargados: agregalos en \"eventos_macro\" de config.json."]
-    t, name = nxt[0]
-    days = (t - now).total_seconds() / 86400
-    when = "HOY" if days < 1 else "MAÑANA" if days < 2 else f"en {int(days)} días"
-    return [f"  {name}: {t:%d/%m %H:%M} UTC ({when})"]
+    # todo lo de la semana que viene; si no hay nada, el próximo
+    week = [(t, n) for t, n in nxt if t - now < pd.Timedelta(days=7)] or nxt[:1]
+    out = []
+    for t, name in week:
+        days = (t - now).total_seconds() / 86400
+        when = "HOY" if days < 1 else "MAÑANA" if days < 2 else f"en {int(days)} días"
+        out.append(f"  {name}: {t:%d/%m %H:%M} UTC ({when})")
+    return out
 
 
 def build(rows: list[dict], cobertura: list[str], cfg: dict) -> str:
@@ -89,7 +94,7 @@ def build(rows: list[dict], cobertura: list[str], cfg: dict) -> str:
     for key, title in SECTIONS.items():
         if key in by:
             parts.append(f"{title} ({len(by[key])})\n" + "\n".join(f"  {r['line']}" for r in by[key]))
-    for title, fn in (("Niveles diarios", niveles), ("Próximo evento macro", lambda: macro(cfg))):
+    for title, fn in (("Niveles diarios", niveles), ("Eventos macro", lambda: macro(cfg))):
         try:
             parts.append(title + "\n" + "\n".join(fn()))
         except Exception as e:  # noqa: BLE001 - una parte que falta no frena el resumen

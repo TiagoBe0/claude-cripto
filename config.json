@@ -69,6 +69,86 @@
     {
       "utc": "2026-10-28T18:00:00Z",
       "nombre": "FOMC: decisión de tasas de la Fed (reunión 27-28/10)"
+    },
+    {
+      "utc": "2026-10-29T12:30:00Z",
+      "nombre": "PIB 3T 2026 (anticipado) y PCE de septiembre (BEA)"
+    },
+    {
+      "utc": "2026-11-06T13:30:00Z",
+      "nombre": "Empleo de octubre (nóminas no agrícolas, BLS)"
+    },
+    {
+      "utc": "2026-11-10T13:30:00Z",
+      "nombre": "CPI de octubre (BLS)"
+    },
+    {
+      "utc": "2026-12-04T13:30:00Z",
+      "nombre": "Empleo de noviembre (BLS)"
+    },
+    {
+      "utc": "2026-12-09T19:00:00Z",
+      "nombre": "FOMC: decisión de tasas con proyecciones (reunión 8-9/12)"
+    },
+    {
+      "utc": "2026-12-10T13:30:00Z",
+      "nombre": "CPI de noviembre (BLS)"
+    },
+    {
+      "utc": "2027-01-08T13:30:00Z",
+      "nombre": "Empleo de diciembre (BLS)"
+    },
+    {
+      "utc": "2027-01-13T13:30:00Z",
+      "nombre": "CPI de diciembre (BLS)"
+    },
+    {
+      "utc": "2027-01-27T19:00:00Z",
+      "nombre": "FOMC: decisión de tasas (reunión 26-27/01)"
+    },
+    {
+      "utc": "2027-02-05T13:30:00Z",
+      "nombre": "Empleo de enero (BLS)"
+    },
+    {
+      "utc": "2027-02-11T13:30:00Z",
+      "nombre": "CPI de enero (BLS)"
+    },
+    {
+      "utc": "2027-03-05T13:30:00Z",
+      "nombre": "Empleo de febrero (BLS)"
+    },
+    {
+      "utc": "2027-03-10T13:30:00Z",
+      "nombre": "CPI de febrero (BLS)"
+    },
+    {
+      "utc": "2027-03-17T18:00:00Z",
+      "nombre": "FOMC: decisión de tasas con proyecciones (reunión 16-17/03, tentativa)"
+    },
+    {
+      "utc": "2027-04-28T18:00:00Z",
+      "nombre": "FOMC: decisión de tasas (reunión 27-28/04, tentativa)"
+    },
+    {
+      "utc": "2027-06-09T18:00:00Z",
+      "nombre": "FOMC: decisión de tasas con proyecciones (reunión 8-9/06, tentativa)"
+    },
+    {
+      "utc": "2027-07-28T18:00:00Z",
+      "nombre": "FOMC: decisión de tasas (reunión 27-28/07, tentativa)"
+    },
+    {
+      "utc": "2027-09-15T18:00:00Z",
+      "nombre": "FOMC: decisión de tasas con proyecciones (reunión 14-15/09, tentativa)"
+    },
+    {
+      "utc": "2027-10-27T18:00:00Z",
+      "nombre": "FOMC: decisión de tasas (reunión 26-27/10, tentativa)"
+    },
+    {
+      "utc": "2027-12-08T19:00:00Z",
+      "nombre": "FOMC: decisión de tasas con proyecciones (reunión 7-8/12, tentativa)"
     }
   ]
 }
